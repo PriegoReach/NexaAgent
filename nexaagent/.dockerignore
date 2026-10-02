@@ -1,0 +1,29 @@
+# Contexto de build de api, worker, tests y webhook-receiver (Dockerfile: COPY . .).
+# Todo lo listado aquí NO entra en la imagen.
+
+# --- Secretos y configuración local ---
+# Los secretos se montan en runtime en /run/secrets/ (docker-compose.yml) y las
+# variables llegan por env_file. Dentro de la imagen quedarían legibles para
+# cualquiera que tenga la imagen, deshaciendo la migración a Docker secrets.
+secrets/
+.env*
+
+# --- Datos de runtime (se montan como volumen; documents.py crea la carpeta) ---
+uploads/
+
+# --- Servicio TTS: tiene su propio contexto de build (./tts) ---
+tts/
+
+# --- Cachés y artefactos locales ---
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+**/*.egg-info/
+**/*.log
+.git
