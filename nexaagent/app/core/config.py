@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------
 
     ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "llama3.2"
+    ollama_model: str = "qwen2.5"
     ollama_embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
 

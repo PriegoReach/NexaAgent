@@ -9,8 +9,8 @@ done
 echo "✓ Ollama is ready"
 echo "📥 Pulling models (this may take a few minutes on first run)..."
 
-echo "  - Downloading ${OLLAMA_MODEL:-llama3.2}..."
-ollama pull ${OLLAMA_MODEL:-llama3.2}
+echo "  - Downloading ${OLLAMA_MODEL:-qwen2.5}..."
+ollama pull ${OLLAMA_MODEL:-qwen2.5}
 
 echo "  - Downloading ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}..."
 ollama pull ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
