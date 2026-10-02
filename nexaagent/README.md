@@ -58,6 +58,9 @@ EMBEDDING_DIM=1024             # must match your embedding model's output
 
 > The chat model must support tool-calling reliably. In testing, llama3.1 did not invoke
 > the tools consistently; that is why the project uses qwen2.5 (see [dev log, Part 2](../Docs/BITACORA-parte-2.md)).
+>
+> `qwen2.5:14b` takes about 9 GB of GPU memory, versus about 4.7 GB for the 7B. If the GPU also loads the
+> reranker or the TTS service, it may not fit on 12 GB cards.
 
 **Important:** If you change `EMBEDDING_DIM`, you need to recreate the database:
 ```bash

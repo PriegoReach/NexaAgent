@@ -202,6 +202,9 @@ EMBEDDING_DIM=1024                   # debe coincidir con la salida del modelo
 
 > El modelo de chat debe soportar tool-calling de forma fiable. En pruebas, llama3.1 no invocaba
 > las herramientas de manera consistente; por eso el proyecto usa qwen2.5 (ver [bitácora, Parte 2](Docs/BITACORA-parte-2.md)).
+>
+> `qwen2.5:14b` ocupa unos 9 GB de memoria de GPU, frente a unos 4.7 GB del 7B. Si la GPU también carga el
+> reranker o el servicio de voz, puede no caber en tarjetas de 12 GB.
 
 ---
 
