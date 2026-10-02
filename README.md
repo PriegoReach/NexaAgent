@@ -1,6 +1,6 @@
 # NexaAgent
 
-Agente de IA autónomo para automatización empresarial: **memoria, herramientas y RAG**, corriendo **100 % en local** con Ollama — sin claves de API ni costes de LLM en la nube.
+Asistente de IA personal full-stack con **memoria, herramientas y RAG**, que corre **100 % en local** con Ollama, sin depender de APIs de LLM de pago. Responde preguntas sobre tus documentos y ejecuta acciones reales en Google Calendar, Gmail y Drive.
 
 Este repositorio es un monorepo con el backend, el frontend y la bitácora de desarrollo:
 
