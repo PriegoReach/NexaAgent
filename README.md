@@ -68,7 +68,7 @@ Nexa/
 | **Celery worker** | Ingesta de documentos fuera de la ruta de petición |
 | **PostgreSQL + pgvector** | Conversaciones, mensajes, documentos, vectores, tareas, cuentas OAuth |
 | **Redis** | Memoria de corto plazo + broker de Celery |
-| **Ollama** | Inferencia local: `llama3.2` (chat) + `nomic-embed-text` (embeddings, 768-dim) |
+| **Ollama** | Inferencia local: `qwen2.5` 7B (chat con tool-calling) + `nomic-embed-text` (embeddings, 768-dim) |
 
 ---
 
@@ -109,7 +109,7 @@ Levanta el stack:
 docker compose up --build
 ```
 
-> **El primer arranque tarda ~5 min**: Ollama descarga los modelos (`llama3.2` ~2 GB, `nomic-embed-text` ~274 MB). El esquema de la BD lo aplica Alembic (`alembic upgrade head`).
+> **El primer arranque tarda bastante (unos 10 min o más, según tu conexión)**: Ollama descarga los modelos (`qwen2.5` ~4.7 GB, `nomic-embed-text` ~274 MB). El esquema de la BD lo aplica Alembic (`alembic upgrade head`).
 
 - API + Swagger: **http://localhost:8000/docs**
 - Salud: **http://localhost:8000/health**
@@ -195,10 +195,16 @@ Todo se configura por `.env` (modelos, zona horaria, CORS) y por archivos de sec
 Cambiar de modelo (en `nexaagent/.env`):
 
 ```bash
-OLLAMA_MODEL=llama3.1                # o mistral, phi3, etc.  → https://ollama.com/library
+OLLAMA_MODEL=qwen2.5:14b             # u otro con tool-calling fiable → https://ollama.com/library
 OLLAMA_EMBEDDING_MODEL=mxbai-embed-large
 EMBEDDING_DIM=1024                   # debe coincidir con la salida del modelo
 ```
+
+> El modelo de chat debe soportar tool-calling de forma fiable. En pruebas, llama3.1 no invocaba
+> las herramientas de manera consistente; por eso el proyecto usa qwen2.5 (ver [bitácora, Parte 2](Docs/BITACORA-parte-2.md)).
+>
+> `qwen2.5:14b` ocupa unos 9 GB de memoria de GPU, frente a unos 4.7 GB del 7B. Si la GPU también carga el
+> reranker o el servicio de voz, puede no caber en tarjetas de 12 GB.
 
 ---
 
