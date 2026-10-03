@@ -20,7 +20,7 @@ Nexa/
 - **Chat con un agente tool-calling** sobre un LLM local (Ollama), con memoria de corto plazo (Redis) y de largo plazo (resúmenes recuperables vía pgvector).
 - **RAG híbrido**: documentos troceados, embebidos en pgvector, recuperados por búsqueda vectorial + full-text y reordenados con un **cross-encoder** (`bge-reranker-v2-m3`) en GPU.
 - **Acciones del agente** mediante herramientas: tareas, webhooks, e integraciones Google (Calendar, Gmail, Drive) vía OAuth.
-- **Confirmación humana e idempotencia**: enviar un correo, crear un evento en Calendar o borrar una tarea solo ocurre tras un "sí" explícito del usuario (el agente propone y muestra exactamente lo que va a hacer; en un correo, destinatario, asunto y cuerpo completos), y el mismo correo, webhook, tarea o evento no se ejecuta dos veces aunque se reintente.
+- **Confirmación humana e idempotencia**: enviar un correo, crear un evento en Calendar o borrar una tarea solo ocurre tras un "sí" explícito del usuario (antes se muestra qué se va a hacer; en un correo, destinatario, asunto y cuerpo completos). Además, el mismo correo, webhook, tarea o evento no se duplica aunque se reintente.
 - **API REST** documentada (OpenAPI/Swagger) con autenticación **JWT Bearer** y streaming SSE.
 - **Web UI** mínima (login + chat) que consume la API por HTTP/JSON.
 
