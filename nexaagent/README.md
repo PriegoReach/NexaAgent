@@ -92,7 +92,7 @@ docker-compose up api worker
 - `app/agent/tools/` — add a file per new tool, register it in `tools/__init__.py`.
 - `app/agent/memory.py` — add long-term memory (summaries recalled via pgvector).
 - `app/rag/` — tune chunking, add re-ranking or metadata filters.
-- `app/core/security.py` — replace the API-key gate with OAuth2/JWT.
+- `app/core/security.py` — JWT auth for a single client (password login at `/auth/login`); extend it to multiple users with per-user claims.
 
 ## Migrations (production)
 
