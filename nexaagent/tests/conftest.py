@@ -55,7 +55,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Tablas a vaciar entre tests. TRUNCATE ... CASCADE arrastra dependientes, pero
 # las listamos todas explícitamente para que el reset de identidades sea total.
-TABLES = ["conversations", "messages", "documents", "document_chunks", "long_term_memories"]
+TABLES = [
+    "conversations", "messages", "documents", "document_chunks", "long_term_memories",
+    "sent_emails",
+]
 
 
 def _create_test_database() -> None:
