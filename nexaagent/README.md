@@ -30,16 +30,23 @@ API docs: http://localhost:8000/docs
 
 ## Try it
 
+Authentication is **JWT Bearer**: log in first, then send the token.
+
 ```bash
-# Chat (starts a new conversation when conversation_id is omitted)
+# 1. Log in -> access_token (the password is the one in secrets/auth_password.txt)
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"password": "my-password"}'
+
+# 2. Chat (starts a new conversation when conversation_id is omitted)
 curl -X POST http://localhost:8000/chat \
-  -H "x-api-key: change-me-super-secret" \
+  -H "Authorization: Bearer <TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello, what can you do?"}'
 
-# Upload a document for RAG (parsed + embedded by the worker)
+# 3. Upload a document for RAG (parsed + embedded by the worker)
 curl -X POST http://localhost:8000/documents/upload \
-  -H "x-api-key: change-me-super-secret" \
+  -H "Authorization: Bearer <TOKEN>" \
   -F "file=@./mydoc.pdf"
 ```
 
@@ -85,7 +92,7 @@ docker-compose up api worker
 - `app/agent/tools/` — add a file per new tool, register it in `tools/__init__.py`.
 - `app/agent/memory.py` — add long-term memory (summaries recalled via pgvector).
 - `app/rag/` — tune chunking, add re-ranking or metadata filters.
-- `app/core/security.py` — replace the API-key gate with OAuth2/JWT.
+- `app/core/security.py` — JWT auth for a single client (password login at `/auth/login`); extend it to multiple users with per-user claims.
 
 ## Migrations (production)
 
