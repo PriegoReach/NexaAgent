@@ -59,6 +59,17 @@ export function ConnectionsModal({
 
   const showConnected = !!status?.connected && !reconnecting;
 
+  // has_refresh_token=false: el backend lo deja en NULL cuando Google lo rechaza
+  // (caducó o se revocó), así que ya no hay renovación automática posible.
+  const canRenew = status?.has_refresh_token !== false;
+  const accessHint = status?.token_valid
+    ? canRenew
+      ? "El acceso está activo."
+      : "El acceso está activo, pero no se podrá renovar: cuando caduque tendrás que reconectar."
+    : canRenew
+      ? "El acceso caducó; se renovará solo al usarlo."
+      : "El acceso caducó y ya no se puede renovar. Reconecta la cuenta.";
+
   async function beginAuth() {
     setOpening(true);
     setError(null);
@@ -133,13 +144,7 @@ export function ConnectionsModal({
 
             {showConnected ? (
               <div className="conn__detail">
-                <p className="conn__hint">
-                  {status?.token_valid
-                    ? "El acceso está activo."
-                    : "El acceso caducó; se renovará solo al usarlo."}
-                  {status?.has_refresh_token === false &&
-                    " Atención: sin token de actualización; quizá debas reconectar."}
-                </p>
+                <p className="conn__hint">{accessHint}</p>
                 <ul className="scope-list">
                   {SCOPES.map((s) => (
                     <li key={s}>

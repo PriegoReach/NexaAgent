@@ -35,7 +35,7 @@ from sqlalchemy import text
 
 from app.db.models import Document
 from app.db.worker_db import worker_session
-from app.integrations.google_oauth import NoGoogleAccount, get_valid_token
+from app.integrations.google_oauth import GoogleTokenUnavailable, get_valid_token
 from app.rag.ingest import ingest_document
 
 logger = logging.getLogger("nexa.tools")
@@ -76,9 +76,8 @@ def _friendly_type(mime: str) -> str:
 async def _list_files(query: str) -> str:
     try:
         token = await get_valid_token()
-    except NoGoogleAccount:
-        return ("No hay una cuenta de Google conectada. Conéctala primero "
-                "(autorización OAuth) y vuelve a intentarlo.")
+    except GoogleTokenUnavailable as exc:
+        return str(exc)
 
     # Drive exige escapar la comilla simple dentro del valor de q con barra invertida.
     safe = query.replace("\\", "\\\\").replace("'", "\\'")
@@ -185,9 +184,8 @@ async def _get_or_create_document(drive_file_id: str, name: str) -> tuple[int, b
 async def _ingest_file(file_id: str) -> str:
     try:
         token = await get_valid_token()
-    except NoGoogleAccount:
-        return ("No hay una cuenta de Google conectada. Conéctala primero "
-                "(autorización OAuth) y vuelve a intentarlo.")
+    except GoogleTokenUnavailable as exc:
+        return str(exc)
     headers = {"Authorization": f"Bearer {token}"}
 
     try:

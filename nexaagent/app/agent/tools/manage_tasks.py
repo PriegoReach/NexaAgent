@@ -140,15 +140,17 @@ async def _propose_delete(task_id: int, conversation_id: Optional[int]) -> str:
         "Responde sí para confirmar o no para cancelar."
     )
     if conversation_id is not None:
-        await pending.set_pending(
+        existing = await pending.set_pending(
             conversation_id,
             {
                 "action": "delete_task",
                 "args": {"task_id": task_id},
-                "description": f"#{task_id} '{content}'",
+                "description": f"el borrado de la tarea #{task_id} '{content}'",
                 "question": question,   # texto LITERAL para el override
             },
         )
+        if existing is not None:
+            return pending.busy_message(existing)
     logger.info("delete_task proposed", extra={"task_id": task_id})
     return question
 

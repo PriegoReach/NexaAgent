@@ -5,6 +5,11 @@ se guarda aquí en Redis, APARTE del historial (clave nexa:pending:<conv_id>, no
 nexa:memory:<id>), con TTL corto (efímera: o se confirma pronto, o caduca). El turno
 siguiente la lee para saber que es una respuesta a la propuesta y no un mensaje normal.
 
+UNA sola pendiente por conversación, y la primera manda: una propuesta nunca pisa a
+otra (SET NX). Si en un mismo turno el modelo propone dos acciones, la segunda no se
+guarda: queda anotada en el `deferred` de la primera para avisar al usuario. Así la
+pregunta que ve el usuario y la acción que ejecuta su "sí" son siempre la misma.
+
 Si Redis cae, se degrada con gracia (NO revienta). Y para una acción DESTRUCTIVA la
 degradación es FAIL-SAFE: sin intención visible, el turno de confirmación no ejecuta
 nada -> ante Redis caído, NO se borra. Fallar hacia no-actuar es lo correcto aquí.
@@ -44,10 +49,30 @@ def _key(conversation_id: int) -> str:
     return f"nexa:pending:{conversation_id}"
 
 
-async def set_pending(conversation_id: int, intent: dict) -> None:
+async def set_pending(conversation_id: int, intent: dict) -> dict | None:
+    """Guarda `intent` SOLO si no hay otra pendiente. Devuelve None si quedó guardada
+    (o si era la misma propuesta repetida). Si ya había OTRA, no la toca: anota la
+    descripción de la nueva en su `deferred` y devuelve la existente."""
+    key = _key(conversation_id)
     try:
         async with _redis() as client:
-            await client.set(_key(conversation_id), json.dumps(intent), ex=_TTL)
+            if await client.set(key, json.dumps(intent), ex=_TTL, nx=True):
+                return None
+            raw = await client.get(key)
+            if raw is None:
+                # Caducó justo entre el SET y el GET: no queda nada guardado, igual
+                # que con Redis caído (fail-safe: un "sí" no hallará nada que ejecutar).
+                return None
+            existing = json.loads(raw)
+            if (existing.get("action"), existing.get("args")) == (
+                intent.get("action"), intent.get("args")
+            ):
+                return None   # la misma propuesta repetida: ya está pendiente
+            deferred = existing.setdefault("deferred", [])
+            description = intent.get("description", "otra acción")
+            if description not in deferred:
+                deferred.append(description)
+                await client.set(key, json.dumps(existing), keepttl=True, xx=True)
     except RedisError as exc:
         # Fail-safe: sin intención guardada, el siguiente "sí" se trata como
         # mensaje normal -> NO se borra. Para lo destructivo, eso es lo correcto.
@@ -55,6 +80,23 @@ async def set_pending(conversation_id: int, intent: dict) -> None:
             "redis unavailable on set_pending, intent NOT stored (fail-safe: no delete)",
             extra={"event": "redis_degraded", "op": "set_pending", "exc_type": type(exc).__name__},
         )
+        return None
+    logger.info(
+        "proposal deferred: another action is already pending",
+        extra={"action": intent.get("action"), "pending_action": existing.get("action")},
+    )
+    return existing
+
+
+def busy_message(existing: dict) -> str:
+    """Lo que la tool le responde al MODELO cuando su propuesta no se guardó porque
+    ya hay otra pendiente. Al usuario se lo cuenta el orquestador, con `deferred`."""
+    return (
+        "Esta acción NO quedó propuesta: ya hay otra esperando la confirmación del "
+        f"usuario ({existing.get('description', 'otra acción')}). No la vuelvas a "
+        "proponer en este turno; el usuario podrá pedirla cuando confirme o cancele "
+        "la que está pendiente."
+    )
 
 
 async def get_pending(conversation_id: int) -> dict | None:
