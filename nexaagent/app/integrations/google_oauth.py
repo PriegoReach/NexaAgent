@@ -132,9 +132,29 @@ def _expires_at_from(expires_in: int) -> datetime:
     return datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
 
-class NoGoogleAccount(Exception):
-    """No hay cuenta Google conectada en oauth_accounts. La tool lo traduce a un
-    mensaje claro ("conéctalo primero"), NO a un 500."""
+class GoogleTokenUnavailable(Exception):
+    """No se pudo conseguir un access token de Google utilizable. str(exc) ya es el
+    mensaje para el usuario: las tools lo devuelven tal cual, NO un 500."""
+
+
+class NoGoogleAccount(GoogleTokenUnavailable):
+    """No hay autorización utilizable: la cuenta no está conectada, o Google ya no
+    acepta la guardada (refresh token caducado o revocado). Hay que (re)conectar."""
+
+
+_REFRESH_UNAVAILABLE = (
+    "No pude renovar el acceso a Google ahora mismo (problema de red o de Google). "
+    "Inténtalo de nuevo en un momento."
+)
+
+
+def _oauth_error(resp: httpx.Response) -> str | None:
+    """Código de error OAuth del cuerpo de la respuesta (p. ej. 'invalid_grant')."""
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    return data.get("error") if isinstance(data, dict) else None
 
 
 async def get_valid_token() -> str:
@@ -147,8 +167,9 @@ async def get_valid_token() -> str:
     Usa worker_session() (NullPool, engine efímero atado al loop activo): seguro
     de llamar desde el ThreadPoolExecutor de una tool sin el cross-loop de P2/P24.
 
-    Levanta NoGoogleAccount si no hay cuenta, o si el token expiró y no hay
-    refresh_token para renovarlo (caso: 1a autorización sin access_type=offline).
+    Nunca deja escapar un error de httpx: levanta NoGoogleAccount si hay que
+    (re)conectar la cuenta (no hay cuenta, no hay refresh_token, o Google lo
+    rechaza) y GoogleTokenUnavailable si Google no responde al renovar.
     """
     async with worker_session() as session:
         result = await session.execute(
@@ -159,7 +180,10 @@ async def get_valid_token() -> str:
         )
         row = result.first()
         if row is None:
-            raise NoGoogleAccount("No hay cuenta Google conectada.")
+            raise NoGoogleAccount(
+                "No hay una cuenta de Google conectada. Conéctala desde Conexiones "
+                "y vuelve a intentarlo."
+            )
 
         account_id = row.id
         access_token = row.access_token
@@ -175,11 +199,42 @@ async def get_valid_token() -> str:
         # Expirado (o a punto): hay que refrescar.
         if not refresh_token:
             raise NoGoogleAccount(
-                "El token de Google expiró y no hay refresh token para renovarlo; "
-                "reconecta la cuenta."
+                "El acceso a Google caducó y no se puede renovar. Reconecta la "
+                "cuenta desde Conexiones."
             )
 
-        tokens = await refresh_access_token(refresh_token)
+        try:
+            tokens = await refresh_access_token(refresh_token)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code >= 500:
+                raise GoogleTokenUnavailable(_REFRESH_UNAVAILABLE) from exc
+            error = _oauth_error(exc.response)
+            logger.warning(
+                "google token refresh rejected",
+                extra={"status": exc.response.status_code, "oauth_error": error},
+            )
+            if error == "invalid_grant":
+                # El refresh token está muerto: caducó (en modo Testing duran ~7 días)
+                # o se revocó. Se borra para que /oauth/google/status lo refleje
+                # (has_refresh_token=false) y la UI pida reconectar en vez de prometer
+                # una renovación que ya no va a ocurrir.
+                await session.execute(
+                    text(
+                        "UPDATE oauth_accounts SET refresh_token = NULL, "
+                        "updated_at = now() WHERE id = :id"
+                    ),
+                    {"id": account_id},
+                )
+                await session.commit()
+            raise NoGoogleAccount(
+                "Google ya no acepta la autorización guardada (caducó o fue revocada). "
+                "Reconecta la cuenta desde Conexiones."
+            ) from exc
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "google token refresh failed", extra={"exc_type": type(exc).__name__}
+            )
+            raise GoogleTokenUnavailable(_REFRESH_UNAVAILABLE) from exc
         new_access = tokens["access_token"]
         new_expires_at = _expires_at_from(tokens["expires_in"])
         # Google no reemite refresh_token en el refresh -> conservamos el actual.

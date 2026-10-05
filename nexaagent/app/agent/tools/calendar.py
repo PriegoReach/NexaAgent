@@ -32,7 +32,7 @@ from app.agent.confirmable import confirmable_action
 from app.agent.tools.create_task import _resolve_due  # reuso del resolver de fechas
 from app.core.config import settings
 from app.core.log_context import conversation_id_var
-from app.integrations.google_oauth import NoGoogleAccount, get_valid_token
+from app.integrations.google_oauth import GoogleTokenUnavailable, get_valid_token
 
 logger = logging.getLogger("nexa.tools")
 
@@ -82,9 +82,8 @@ def _fmt_event(event: dict) -> str:
 async def _list_events(max_results: int) -> str:
     try:
         token = await get_valid_token()
-    except NoGoogleAccount:
-        return ("No hay un calendario de Google conectado. Conéctalo primero "
-                "(autorización OAuth) y vuelve a intentarlo.")
+    except GoogleTokenUnavailable as exc:
+        return str(exc)
 
     # timeMin = ahora -> solo eventos futuros. singleEvents+orderBy=startTime es
     # la combinación que Google exige para ordenar por hora de inicio (expande
@@ -213,9 +212,8 @@ async def perform_create_event(args: dict) -> str:
 
     try:
         token = await get_valid_token()
-    except NoGoogleAccount:
-        return ("No hay un calendario de Google conectado. Conéctalo primero "
-                "(autorización OAuth) y vuelve a intentarlo.")
+    except GoogleTokenUnavailable as exc:
+        return f"No creé el evento. {exc}"
 
     event_id = _event_id(summary, start, end)
     body = {
@@ -276,19 +274,21 @@ async def _propose_event(summary: str, date_phrase: str, time_phrase: str,
         "end": end,
         "timezone": settings.calendar_timezone,
     }
-    description = f"'{summary.strip()}' el {_fmt_when(start)}"
-    question = (f"¿Creo el evento {description}? "
+    event = f"'{summary.strip()}' el {_fmt_when(start)}"
+    question = (f"¿Creo el evento {event}? "
                 "Responde sí para confirmar o no para cancelar.")
     if conversation_id is not None:
-        await pending.set_pending(
+        existing = await pending.set_pending(
             conversation_id,
             {
                 "action": "create_calendar_event",
                 "args": args,
-                "description": description,
+                "description": f"la creación del evento {event}",
                 "question": question,   # texto LITERAL para el override
             },
         )
+        if existing is not None:
+            return pending.busy_message(existing)
     logger.info("create_calendar_event proposed", extra={"event_id": _event_id(summary, start, end)})
     return question
 

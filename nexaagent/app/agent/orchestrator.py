@@ -220,6 +220,21 @@ async def _handle_confirmation(conversation_id: int, user_input: str, intent: di
     return f"No entendí. ¿Confirmas {description}? Responde sí o no."
 
 
+def _proposal_text(intent: dict) -> str:
+    """La pregunta LITERAL que guardó la tool (lo que ejecutará el "sí") y, si en el
+    mismo turno se pidieron otras acciones confirmables que quedaron sin proponer
+    (solo cabe una pendiente, ver pending.py), un aviso para que el usuario no las
+    dé por hechas."""
+    text = intent["question"]
+    deferred = intent.get("deferred") or []
+    if deferred:
+        text += (
+            f"\n\nTambién me pediste {'; '.join(deferred)}, pero solo puedo dejar una "
+            "acción esperando confirmación. Pídemelo de nuevo cuando respondas a esta."
+        )
+    return text
+
+
 async def run_agent(conversation_id: int, user_input: str) -> str:
     conversation_id_var.set(str(conversation_id))
     logger.info("agent run start", extra={"event": "agent_start"})
@@ -266,7 +281,7 @@ async def run_agent(conversation_id: int, user_input: str) -> str:
     # destinatario/cuerpo al narrar.
     new_pending = await pending.get_pending(conversation_id)
     if new_pending is not None and new_pending.get("question"):
-        answer = new_pending["question"]
+        answer = _proposal_text(new_pending)
         logger.info("proposal override applied (no-model proposal)",
                     extra={"action": new_pending.get("action")})
 
@@ -383,8 +398,12 @@ async def run_agent_stream(conversation_id: int, user_input: str):
 
     if proposal_question is not None:
         # Reemplazo autoritativo: el usuario ve y aprueba el texto LITERAL, no la
-        # prosa del modelo. (El modelo ya hizo su trabajo: elegir la tool.)
-        answer = proposal_question
+        # prosa del modelo. (El modelo ya hizo su trabajo: elegir la tool.) Se relee
+        # la pendiente para incluir el aviso de las propuestas que quedaron aplazadas.
+        final = await pending.get_pending(conversation_id)
+        answer = (
+            _proposal_text(final) if final and final.get("question") else proposal_question
+        )
         logger.info("proposal override applied (no-model proposal, stream)")
         yield {"type": "token", "value": answer}
     else:

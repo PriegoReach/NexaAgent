@@ -80,7 +80,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_task: "Creando una tarea",
   list_tasks: "Revisando tus tareas",
   update_task: "Actualizando una tarea",
-  delete_task: "Eliminando una tarea",
+  delete_task: "Preparando el borrado de una tarea",
   call_webhook: "Enviando una notificación",
   list_calendar_events: "Consultando tu calendario",
   create_calendar_event: "Preparando un evento",
