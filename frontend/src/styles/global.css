@@ -1008,6 +1008,9 @@ body {
 .conn-dot--on {
   background: var(--live);
 }
+.conn-dot--warn {
+  background: var(--danger-text);
+}
 
 /* --- Modal (shell genérico) ------------------------------------------------ */
 .modal-backdrop {
@@ -1112,6 +1115,10 @@ body {
 }
 .conn__badge--idle {
   color: var(--text-faint);
+}
+.conn__badge--warn {
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 .conn__detail {
   display: flex;

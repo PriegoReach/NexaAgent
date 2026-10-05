@@ -176,6 +176,52 @@ _NEGATIVO = {
 }
 
 
+# --- Propuestas sin acción detrás -----------------------------------------
+# Las tools piden la confirmación con "Responde sí para confirmar o no para
+# cancelar". El modelo a veces COPIA ese texto del historial sin llamar a la tool:
+# el usuario ve una propuesta, pero no hay nada pendiente, y su "sí" le llegaría al
+# modelo como un mensaje normal (que podría responder "listo, enviado" sin haber
+# hecho nada). Este patrón reconoce una petición explícita de sí/no; las preguntas
+# normales del modelo ("¿quieres que lo busque?") no lo cumplen.
+_CONFIRM_REQUEST = re.compile(
+    r"\bs[ií]\s+para\s+confirmar\b"                          # "sí para confirmar"
+    r"|\bs[ií]\s+o\s+no\b"                                   # "responde sí o no"
+    r"|\b(responde|contesta)\s+(con\s+(un\s+)?)?[\"'«“]?sí\b",  # "responde sí", "contesta con un sí"
+    re.IGNORECASE,
+)
+
+_PENDING_MINUTES = pending._TTL // 60
+
+_NO_ACTION_PREPARED = (
+    "Iba a pedirte que confirmaras, pero no llegué a preparar la acción, así que no "
+    "hay nada que confirmar ni se hizo nada. Pídemelo de nuevo."
+)
+
+
+def _asks_confirmation(text: str) -> bool:
+    return bool(_CONFIRM_REQUEST.search(text or ""))
+
+
+def _stale_confirmation_reply(user_input: str, history: list[dict]) -> str | None:
+    """Respuesta fija para un sí/no que contesta a una propuesta que ya NO está
+    pendiente: caducó, o el modelo la imitó sin crearla. Sin esto, el "sí" iría al
+    modelo como mensaje normal. Solo actúa si el último mensaje del asistente pedía
+    confirmación, para no cortar un "sí" a una pregunta normal del modelo."""
+    last = next((m for m in reversed(history) if m.get("role") == "assistant"), None)
+    if last is None or not _asks_confirmation(last.get("content", "")):
+        return None
+    norm = _normalize_reply(user_input)
+    if norm in _AFIRMATIVO:
+        return (
+            "No hay ninguna acción esperando tu confirmación: la propuesta caducó (duran "
+            f"{_PENDING_MINUTES} minutos) o no llegué a prepararla. No hice nada; "
+            "pídemelo de nuevo."
+        )
+    if norm in _NEGATIVO:
+        return "No había ninguna acción esperando confirmación, así que no hice nada."
+    return None
+
+
 def _normalize_reply(s: str) -> str:
     s = unicodedata.normalize("NFKD", s.lower().strip())
     s = "".join(c for c in s if not unicodedata.combining(c))   # sin acentos
@@ -252,6 +298,16 @@ async def run_agent(conversation_id: int, user_input: str) -> str:
         await _maybe_extract_memories(conversation_id)
         return answer
 
+    # Un sí/no a una propuesta que ya no está pendiente tampoco va al modelo.
+    stale = _stale_confirmation_reply(user_input, history)
+    if stale is not None:
+        logger.info("confirmation without pending action, NOT calling the model")
+        await memory.append(conversation_id, "user", user_input)
+        await memory.append(conversation_id, "assistant", stale)
+        await _persist_messages(conversation_id, user_input, stale)
+        await _maybe_extract_memories(conversation_id)
+        return stale
+
     messages = _to_lc_messages(history) + [HumanMessage(content=user_input)]
 
     logger.info(
@@ -284,6 +340,11 @@ async def run_agent(conversation_id: int, user_input: str) -> str:
         answer = _proposal_text(new_pending)
         logger.info("proposal override applied (no-model proposal)",
                     extra={"action": new_pending.get("action")})
+    elif new_pending is None and _asks_confirmation(answer):
+        # El modelo imitó una propuesta sin llamar a la tool: no hay nada que
+        # confirmar. Se sustituye también en el historial, para que no la vuelva a copiar.
+        answer = _NO_ACTION_PREPARED
+        logger.warning("imitated proposal replaced: no pending action")
 
     # Memoria de corto plazo (Redis) + registro durable (Postgres).
     await memory.append(conversation_id, "user", user_input)
@@ -343,6 +404,18 @@ async def run_agent_stream(conversation_id: int, user_input: str):
         proposal = await _proposal_event(conversation_id)
         if proposal is not None:
             yield proposal
+        yield {"type": "done"}
+        return
+
+    # Un sí/no a una propuesta que ya no está pendiente tampoco va al modelo.
+    stale = _stale_confirmation_reply(user_input, history)
+    if stale is not None:
+        logger.info("confirmation without pending action, NOT calling the model")
+        yield {"type": "token", "value": stale}
+        await memory.append(conversation_id, "user", user_input)
+        await memory.append(conversation_id, "assistant", stale)
+        await _persist_messages(conversation_id, user_input, stale)
+        await _maybe_extract_memories(conversation_id)
         yield {"type": "done"}
         return
 
@@ -408,6 +481,12 @@ async def run_agent_stream(conversation_id: int, user_input: str):
         yield {"type": "token", "value": answer}
     else:
         answer = "".join(full_answer).strip()
+        if _asks_confirmation(answer) and await pending.get_pending(conversation_id) is None:
+            # El modelo imitó una propuesta sin llamar a la tool. Sus tokens ya se
+            # mostraron: `replace` le dice a la UI que sustituya ese texto.
+            answer = _NO_ACTION_PREPARED
+            logger.warning("imitated proposal replaced: no pending action (stream)")
+            yield {"type": "replace", "value": answer}
 
     # Persistencia diferida (con la respuesta completa), igual que run_agent.
     await memory.append(conversation_id, "user", user_input)

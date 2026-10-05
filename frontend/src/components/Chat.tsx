@@ -116,6 +116,12 @@ function appendToken(parts: AgentPart[], value: string): AgentPart[] {
   return [...parts, { kind: "text", text: value }];
 }
 
+// El backend corrigió el texto ya transmitido (p. ej. una propuesta que el modelo
+// imitó sin crearla): se conservan los pasos de herramienta y el texto se sustituye.
+function replaceText(parts: AgentPart[], value: string): AgentPart[] {
+  return [...parts.filter((p) => p.kind === "tool"), { kind: "text", text: value }];
+}
+
 function startTool(parts: AgentPart[], tool: string): AgentPart[] {
   return [...parts, { kind: "tool", id: crypto.randomUUID(), tool, status: "running" }];
 }
@@ -335,6 +341,9 @@ export function Chat({
               break;
             case "token":
               updateAgent(agentId, (m) => ({ ...m, parts: appendToken(m.parts, ev.value) }));
+              break;
+            case "replace":
+              updateAgent(agentId, (m) => ({ ...m, parts: replaceText(m.parts, ev.value) }));
               break;
             case "tool_start":
               updateAgent(agentId, (m) => ({ ...m, parts: startTool(m.parts, ev.tool) }));
