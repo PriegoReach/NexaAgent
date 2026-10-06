@@ -1289,6 +1289,10 @@ body {
   background: var(--surface-sunken);
   color: var(--text-muted);
 }
+.doc-badge--empty {
+  background: var(--info-bg);
+  color: var(--info-text);
+}
 .doc-row__del {
   flex-shrink: 0;
   width: 26px;

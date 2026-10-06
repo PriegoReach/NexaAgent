@@ -1,15 +1,25 @@
+"""Memoria de corto plazo: los últimos mensajes de la conversación que ve el modelo.
+
+Redis es la copia rápida (últimos _MAX_TURNS, TTL de 24 h) y Postgres (tabla
+messages) la fuente durable. Si Redis no tiene la conversación (caducó, se reinició
+o está caído), el historial se reconstruye desde Postgres; sin eso, una conversación
+retomada otro día llegaba al modelo sin contexto aunque la UI la mostrara entera.
+"""
 import json
 import logging
 
 import redis.asyncio as redis
 from redis.exceptions import RedisError
+from sqlalchemy import text
 
 from app.core.config import settings
+from app.db.session import SessionLocal
 
 logger = logging.getLogger("nexa.memory")
 
 _client: redis.Redis | None = None
 _MAX_TURNS = 20  # how many recent messages to keep in short-term memory
+_TTL_SECONDS = 60 * 60 * 24
 
 
 def _redis() -> redis.Redis:
@@ -30,21 +40,57 @@ async def ping() -> None:
     await _redis().ping()
 
 
+async def _load_from_db(conversation_id: int) -> list[dict]:
+    """Los últimos _MAX_TURNS mensajes de la conversación, en orden cronológico."""
+    async with SessionLocal() as session:
+        rows = await session.execute(
+            text(
+                "SELECT role, content FROM messages "
+                "WHERE conversation_id = :cid AND role IN ('user', 'assistant') "
+                "ORDER BY id DESC LIMIT :n"
+            ),
+            {"cid": conversation_id, "n": _MAX_TURNS},
+        )
+        return [{"role": r.role, "content": r.content} for r in reversed(rows.fetchall())]
+
+
 async def load_history(conversation_id: int) -> list[dict]:
+    key = _key(conversation_id)
     try:
-        raw = await _redis().lrange(_key(conversation_id), 0, -1)
-        return [json.loads(item) for item in raw]
+        raw = await _redis().lrange(key, 0, -1)
     except RedisError as exc:
-        # Degradación: el agente responde sin historial reciente, no revienta.
+        # Degradación: sin Redis, el historial sale de Postgres (más lento, pero completo).
         logger.warning(
-            "redis unavailable on load, degrading to empty history",
+            "redis unavailable on load, reading history from postgres",
             extra={
                 "event": "redis_degraded",
                 "op": "load_history",
                 "exc_type": type(exc).__name__,
             },
         )
-        return []
+        return await _load_from_db(conversation_id)
+    if raw:
+        return [json.loads(item) for item in raw]
+
+    # Sin copia en Redis: conversación nueva, o una que caducó (TTL de 24 h). Se
+    # reconstruye desde Postgres y se vuelve a guardar en Redis; si no, el append de
+    # este turno crearía la lista solo con él y el siguiente perdería el resto.
+    history = await _load_from_db(conversation_id)
+    if history:
+        try:
+            client = _redis()
+            await client.rpush(key, *(json.dumps(m) for m in history))
+            await client.ltrim(key, -_MAX_TURNS, -1)
+            await client.expire(key, _TTL_SECONDS)
+        except RedisError as exc:
+            logger.warning(
+                "redis unavailable on warm-up, history served from postgres only",
+                extra={"event": "redis_degraded", "op": "warm_history",
+                       "exc_type": type(exc).__name__},
+            )
+        logger.info("short-term history rebuilt from postgres",
+                    extra={"event": "history_rebuilt", "n_messages": len(history)})
+    return history
 
 
 async def append(conversation_id: int, role: str, content: str) -> None:
@@ -53,7 +99,7 @@ async def append(conversation_id: int, role: str, content: str) -> None:
         client = _redis()
         await client.rpush(key, json.dumps({"role": role, "content": content}))
         await client.ltrim(key, -_MAX_TURNS, -1)
-        await client.expire(key, 60 * 60 * 24)  # 24h TTL for short-term memory
+        await client.expire(key, _TTL_SECONDS)
     except RedisError as exc:
         # No relanza: Postgres ya tiene el mensaje durable. Solo se pierde la copia
         # rápida en Redis de este turno.

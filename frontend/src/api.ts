@@ -264,7 +264,7 @@ export function connectGoogle(
 export interface DocumentItem {
   id: number;
   filename: string;
-  status: string; // pending | ready | failed
+  status: string; // pending | ready | empty (sin texto) | failed
   created_at: string;
 }
 
