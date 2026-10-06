@@ -181,6 +181,19 @@ async def _get_or_create_document(drive_file_id: str, name: str) -> tuple[int, b
         return doc.id, True
 
 
+async def _mark_failed(document_id: int) -> None:
+    try:
+        async with worker_session() as session:
+            await session.execute(
+                text("UPDATE documents SET status = 'failed' WHERE id = :id"),
+                {"id": document_id},
+            )
+            await session.commit()
+    except Exception:
+        logger.exception("could not mark drive document failed",
+                         extra={"document_id": document_id})
+
+
 async def _ingest_file(file_id: str) -> str:
     try:
         token = await get_valid_token()
@@ -223,6 +236,7 @@ async def _ingest_file(file_id: str) -> str:
     # 3) PUENTE al pipeline: escribir a archivo temporal con la extensión correcta
     # (ingest._read_file decide por el sufijo) y borrarlo al terminar.
     tmp_path = os.path.join(tempfile.gettempdir(), f"drive_{file_id}{suffix}")
+    document_id: int | None = None
     try:
         with open(tmp_path, "wb") as fh:
             fh.write(content)
@@ -230,6 +244,9 @@ async def _ingest_file(file_id: str) -> str:
         n_chunks = await ingest_document(document_id, tmp_path)
     except Exception as exc:  # el pipeline no debe propagar al agente como 500.
         logger.exception("drive ingest pipeline error", extra={"file_id": file_id})
+        if document_id is not None:
+            # Igual que el on_failure de la tarea Celery: 'failed', no 'pending' eterno.
+            await _mark_failed(document_id)
         return f"No pude indexar '{name}': {type(exc).__name__}."
     finally:
         try:

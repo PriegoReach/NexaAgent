@@ -9,7 +9,15 @@ interface DocumentsModalProps {
 }
 
 // El parser del backend maneja bien PDF y texto plano; binarios como .docx no.
+// Misma lista que SUPPORTED_SUFFIXES en el backend (app/rag/ingest.py).
 const ACCEPT = ".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.log,.yaml,.yml,.rst,.text";
+const SUPPORTED = ACCEPT.split(",");
+
+// `accept` solo filtra el diálogo de abrir archivo: lo que se arrastra llega tal cual.
+function isSupported(file: File): boolean {
+  const dot = file.name.lastIndexOf(".");
+  return dot !== -1 && SUPPORTED.includes(file.name.slice(dot).toLowerCase());
+}
 
 export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsModalProps) {
   const [docs, setDocs] = useState<DocumentItem[] | null>(null);
@@ -57,10 +65,21 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
   const handleFiles = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
+      const all = Array.from(files);
+      const accepted = all.filter(isSupported);
+      const skipped = all.filter((f) => !isSupported(f));
+      setError(
+        skipped.length
+          ? `No subí ${skipped.map((f) => f.name).join(", ")}: solo se pueden indexar PDF y archivos de texto (.txt, .md, .csv, .json…).`
+          : null,
+      );
+      if (accepted.length === 0) {
+        if (inputRef.current) inputRef.current.value = "";
+        return;
+      }
       setUploading(true);
-      setError(null);
       try {
-        for (const file of Array.from(files)) {
+        for (const file of accepted) {
           await uploadDocument(token, file);
         }
         await refresh();
@@ -115,7 +134,8 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
         <div className="modal__body">
           <p className="conn__hint">
             Sube documentos para que Nexa los busque al responder. Funciona con PDF
-            y texto (.txt, .md, .csv, .json).
+            y texto (.txt, .md, .csv, .json). Los PDF escaneados, sin texto, todavía
+            no se pueden leer.
           </p>
 
           <div
@@ -224,6 +244,16 @@ function StatusBadge({ status }: { status: string }) {
     return (
       <span className="doc-badge doc-badge--ready">
         <CheckIcon /> Listo
+      </span>
+    );
+  }
+  if (status === "empty") {
+    return (
+      <span
+        className="doc-badge doc-badge--empty"
+        title="No encontré texto que indexar. Si es un PDF escaneado, todavía no se puede leer."
+      >
+        Sin texto
       </span>
     );
   }

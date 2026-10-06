@@ -43,7 +43,7 @@ class Document(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     filename: Mapped[str] = mapped_column(String(512))
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|ready|error
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|ready|empty|failed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # Origen Drive (P28): NULL para docs subidos a mano; el id de Drive para los
     # traídos por ingest_drive_file. Permite reusar el document_id al re-ingestar el

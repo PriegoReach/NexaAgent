@@ -51,5 +51,5 @@ class DocumentResponse(BaseModel):
 class DocumentItem(BaseModel):
     id: int
     filename: str
-    status: str  # pending | ready | failed
+    status: str  # pending | ready | empty (sin texto extraíble) | failed
     created_at: datetime

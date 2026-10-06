@@ -8,6 +8,15 @@ from app.db.worker_db import worker_session
 from app.rag.embeddings import get_embeddings
 
 
+# Lo que _read_file sabe leer: PDF (con PdfReader) y texto plano (todo lo demás se lee
+# como texto, así que un binario como .docx daría basura). /documents/upload rechaza
+# el resto; la UI usa la misma lista.
+SUPPORTED_SUFFIXES = frozenset({
+    ".pdf", ".txt", ".text", ".md", ".markdown", ".rst",
+    ".csv", ".tsv", ".json", ".yaml", ".yml", ".log",
+})
+
+
 def _read_file(path: str) -> str:
     p = Path(path)
     if p.suffix.lower() == ".pdf":
@@ -96,10 +105,24 @@ async def ingest_document(document_id: int, file_path: str) -> int:
     """Parse -> chunk (estructural + contexto) -> embed -> store.
 
     Usa worker_session(): engine NullPool propio, atado al loop actual de la tarea Celery.
+
+    Sin texto extraíble (un PDF escaneado, un archivo vacío) el documento termina en
+    'empty' en vez de quedarse 'pending' para siempre, y pierde los chunks que tuviera
+    de una ingesta anterior: ya no corresponden a su contenido.
     """
     raw = _read_file(file_path)
     chunks = _enrich_chunks(raw, file_path)
     if not chunks:
+        async with worker_session() as session:
+            await session.execute(
+                text("DELETE FROM document_chunks WHERE document_id = :doc_id"),
+                {"doc_id": document_id},
+            )
+            await session.execute(
+                text("UPDATE documents SET status = 'empty' WHERE id = :id"),
+                {"id": document_id},
+            )
+            await session.commit()
         return 0
 
     vectors = get_embeddings().embed_documents(chunks)

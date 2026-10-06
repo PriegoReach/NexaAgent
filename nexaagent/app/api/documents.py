@@ -9,6 +9,7 @@ from app.core.log_context import request_id_var
 from app.core.security import require_jwt
 from app.db.models import Document
 from app.db.session import SessionLocal
+from app.rag.ingest import SUPPORTED_SUFFIXES
 from app.schemas.chat import DocumentItem, DocumentResponse
 from app.workers.tasks import ingest_document_task
 
@@ -22,6 +23,18 @@ router = APIRouter(
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)) -> DocumentResponse:
+    # Antes de crear nada: un tipo que el parser no sabe leer (p. ej. .docx) se
+    # indexaría como texto basura.
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in SUPPORTED_SUFFIXES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=(
+                f"No puedo indexar archivos {suffix or 'sin extensión'}. "
+                "Sube un PDF o un archivo de texto (.txt, .md, .csv, .json…)."
+            ),
+        )
+
     async with SessionLocal() as session:
         doc = Document(filename=file.filename or "untitled", status="pending")
         session.add(doc)
@@ -44,7 +57,7 @@ async def list_documents(
     limit: int = Query(default=100, ge=1, le=200),
 ) -> list[DocumentItem]:
     """Lista los documentos del knowledge base (subidos a mano o traídos de Drive),
-    más recientes primero. Expone `status` (pending|ready|failed) para que la UI
+    más recientes primero. Expone `status` (pending|ready|empty|failed) para que la UI
     muestre el progreso de la ingesta, que corre en segundo plano en el worker."""
     async with SessionLocal() as session:
         rows = await session.execute(
