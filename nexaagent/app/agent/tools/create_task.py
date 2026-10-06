@@ -10,6 +10,7 @@ from typing import Optional
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from app.core.clock import local_today
 from app.db.worker_db import worker_session
 
 logger = logging.getLogger("nexa.tools")
@@ -123,7 +124,7 @@ def create_task(content: str, due_date: Optional[str] = None) -> str:
     """
     parsed: Optional[date] = None
     if due_date:
-        parsed = _resolve_due(due_date, date.today())
+        parsed = _resolve_due(due_date, local_today())
         if parsed is None:
             return (
                 f"No pude agendar la fecha '{due_date}' (no la entendí o ya pasó). "
