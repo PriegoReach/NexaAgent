@@ -94,13 +94,17 @@ docker-compose up api worker
 - `app/rag/` — tune chunking, add re-ranking or metadata filters.
 - `app/core/security.py` — JWT auth for a single client (password login at `/auth/login`); extend it to multiple users with per-user claims.
 
-## Migrations (production)
+## Migrations
 
-Dev mode auto-creates tables on startup. For production, use Alembic:
+The schema is managed by Alembic. Pending migrations run automatically on every
+`docker compose up`: the one-shot `migrate` service runs `alembic upgrade head`, and
+`api` and `worker` wait until it finishes successfully.
+
+To add a migration (this project writes them by hand) and apply it without restarting everything:
 
 ```bash
-alembic revision --autogenerate -m "init"
-alembic upgrade head
+docker compose exec api alembic revision -m "my change"
+docker compose run --rm migrate
 ```
 
 ## Switching to OpenAI / Anthropic
