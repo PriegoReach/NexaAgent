@@ -110,7 +110,7 @@ Levanta el stack:
 docker compose up --build
 ```
 
-> **El primer arranque tarda bastante (unos 10 min o más, según tu conexión)**: Ollama descarga los modelos (`qwen2.5` ~4.7 GB, `nomic-embed-text` ~274 MB). El esquema de la BD lo aplica Alembic (`alembic upgrade head`).
+> **El primer arranque tarda bastante (unos 10 min o más, según tu conexión)**: Ollama descarga los modelos (`qwen2.5` ~4.7 GB, `nomic-embed-text` ~274 MB). El esquema de la BD lo crea el servicio `migrate` (`alembic upgrade head`) antes de que arranquen la API y el worker.
 
 - API + Swagger: **http://localhost:8000/docs**
 - Salud: **http://localhost:8000/health**
@@ -178,11 +178,13 @@ docker compose run --rm tests
 
 ## Migraciones
 
-El esquema lo gestiona **Alembic**. Para crear/aplicar migraciones:
+El esquema lo gestiona **Alembic**. Las migraciones pendientes se aplican solas en cada `docker compose up`: el servicio `migrate` ejecuta `alembic upgrade head` y la API y el worker esperan a que termine bien.
+
+Para crear una migración nueva (el proyecto las escribe a mano; ver la bitácora, Parte 6) y aplicarla sin reiniciar todo:
 
 ```bash
-docker compose exec api alembic revision --autogenerate -m "mi cambio"
-docker compose exec api alembic upgrade head
+docker compose exec api alembic revision -m "mi cambio"
+docker compose run --rm migrate
 ```
 
 > Si cambias `EMBEDDING_DIM` (modelo de embeddings distinto) hay que recrear la BD: `docker compose down -v` (¡borra datos!) y volver a levantar.
@@ -219,5 +221,6 @@ EMBEDDING_DIM=1024                   # debe coincidir con la salida del modelo
 ## Seguridad
 
 - Los **secretos reales** (`nexaagent/secrets/`, cualquier `.env`) están en `.gitignore` y **no** se versionan.
+- **PostgreSQL, Redis y Ollama solo escuchan en `127.0.0.1`**: se pueden usar desde este equipo, pero no desde otros de la red local. PostgreSQL se publica en el **5433** (no en el 5432, para no chocar con un PostgreSQL instalado en el propio equipo). La API (`:8000`) sí escucha en todas las interfaces y exige JWT.
 - La autenticación es JWT HS256 con caducidad; rotar `jwt_secret` invalida todos los tokens emitidos.
 - Las credenciales OAuth estáticas (`client_id`/`client_secret`) van a secrets; los tokens OAuth dinámicos viven en la tabla `oauth_accounts` de Postgres.

@@ -1,8 +1,12 @@
 services:
   ollama:
     image: ollama/ollama:latest
+    # Ollama, Postgres y Redis solo escuchan en 127.0.0.1: se pueden usar desde este
+    # equipo (curl, un cliente SQL), pero no desde el resto de la red local. Redis no
+    # tiene contraseña y en Postgres están los tokens de Google. La api y el worker
+    # no usan estos puertos: hablan con ellos por la red interna de compose.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
@@ -45,8 +49,11 @@ services:
       # debe coincidir con el del rol existente ('nexa') — esto reubica, no rota.
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: ${POSTGRES_DB:-nexaagent}
+    # Solo este equipo (ver ollama). En el host va en el 5433 y no en el 5432, que
+    # suele ocuparlo un PostgreSQL instalado en el propio Windows: con los dos en el
+    # 5432, localhost:5432 llega al nativo y no a esta base. La api no usa este puerto.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     secrets:
@@ -60,7 +67,27 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"   # solo este equipo (ver ollama)
+
+  # Aplica las migraciones de Alembic y termina; api y worker esperan a que acabe
+  # bien. En una instalación nueva crea el esquema; en una al día no hace nada. Mismo
+  # patrón de un solo uso que init-ollama. Usa la MISMA imagen que api (mismo
+  # Dockerfile): sin el `image:` compartido, compose construiría una copia de ~10 GB.
+  migrate:
+    build: .
+    image: nexaagent-api
+    command: alembic upgrade head
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    secrets:
+      - postgres_password
+    restart: "no"
 
   # Receptor de webhooks de PRUEBA/DEMO para verificar call_webhook (P22, Bloque B).
   # Reusa la imagen api (build: ., capas cacheadas) y monta el script; en la red de
@@ -74,6 +101,7 @@ services:
 
   api:
     build: .
+    image: nexaagent-api   # nombre fijo: migrate reutiliza esta imagen
     env_file: .env
     environment:
       # Caché del modelo del reranker (bge-reranker-v2-m3) en un volumen, para no
@@ -93,6 +121,8 @@ services:
       - "8000:8000"
     depends_on:
       init-ollama:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
       db:
         condition: service_healthy
@@ -118,6 +148,8 @@ services:
     env_file: .env
     depends_on:
       init-ollama:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
       db:
         condition: service_healthy
