@@ -21,7 +21,7 @@ import logging
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, date, time as dtime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -30,6 +30,7 @@ from langchain_core.tools import tool
 from app.agent import pending
 from app.agent.confirmable import confirmable_action
 from app.agent.tools.create_task import _resolve_due  # reuso del resolver de fechas
+from app.core.clock import local_today
 from app.core.config import settings
 from app.core.log_context import conversation_id_var
 from app.integrations.google_oauth import GoogleTokenUnavailable, get_valid_token
@@ -254,7 +255,7 @@ async def _propose_event(summary: str, date_phrase: str, time_phrase: str,
                          duration_minutes: int, conversation_id: Optional[int]) -> str:
     """Resuelve fecha+hora, arma el intent y lo guarda en pending. NO crea el
     evento: la acción externa pasa por confirmación igual que delete_task."""
-    resolved = _resolve_due(date_phrase, date.today())
+    resolved = _resolve_due(date_phrase, local_today())
     if resolved is None:
         return (f"No pude entender la fecha '{date_phrase}' (o ya pasó). "
                 "Dime una fecha futura, p. ej. 'mañana' o '2026-06-15'.")
