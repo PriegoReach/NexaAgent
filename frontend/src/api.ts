@@ -57,6 +57,8 @@ export async function login(password: string): Promise<string> {
 //   {type:"tool_start", tool}        <- el agente empezó a usar una herramienta
 //   {type:"tool_end", tool}          <- la herramienta terminó
 //   {type:"proposal", action, description}  <- el turno cerró esperando confirmación
+//   {type:"replace", value}          <- sustituye el texto ya recibido (los pasos de
+//                                       herramienta se conservan)
 //   {type:"error", message}          <- fallo del modelo a mitad del stream
 //   {type:"done"}                    <- fin
 export type StreamEvent =
@@ -65,6 +67,7 @@ export type StreamEvent =
   | { type: "tool_start"; tool: string }
   | { type: "tool_end"; tool: string }
   | { type: "proposal"; action: string; description: string }
+  | { type: "replace"; value: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -224,6 +227,15 @@ export interface GoogleStatus {
   has_refresh_token?: boolean;
   scope?: string;
   updated_at?: string;
+}
+
+// Hay cuenta guardada, pero el acceso caducó y ya no se puede renovar (el backend
+// borra el refresh token cuando Google lo rechaza): para Nexa es como no estar
+// conectado hasta que se reconecte.
+export function needsGoogleReconnect(status: GoogleStatus | null): boolean {
+  return (
+    !!status?.connected && status.token_valid === false && status.has_refresh_token === false
+  );
 }
 
 export function getGoogleStatus(token: string): Promise<GoogleStatus> {

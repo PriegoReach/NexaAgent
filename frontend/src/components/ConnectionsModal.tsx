@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { ApiError, connectGoogle, startGoogleAuth } from "../api";
+import { ApiError, connectGoogle, needsGoogleReconnect, startGoogleAuth } from "../api";
 import type { GoogleStatus } from "../api";
 
 interface ConnectionsModalProps {
@@ -57,18 +57,17 @@ export function ConnectionsModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const showConnected = !!status?.connected && !reconnecting;
+  // Caducado y sin forma de renovarse: se muestra directamente el flujo de conexión.
+  const mustReconnect = needsGoogleReconnect(status);
+  const showConnected = !!status?.connected && !mustReconnect && !reconnecting;
 
   // has_refresh_token=false: el backend lo deja en NULL cuando Google lo rechaza
   // (caducó o se revocó), así que ya no hay renovación automática posible.
-  const canRenew = status?.has_refresh_token !== false;
   const accessHint = status?.token_valid
-    ? canRenew
-      ? "El acceso está activo."
-      : "El acceso está activo, pero no se podrá renovar: cuando caduque tendrás que reconectar."
-    : canRenew
-      ? "El acceso caducó; se renovará solo al usarlo."
-      : "El acceso caducó y ya no se puede renovar. Reconecta la cuenta.";
+    ? status.has_refresh_token === false
+      ? "El acceso está activo, pero no se podrá renovar: cuando caduque tendrás que reconectar."
+      : "El acceso está activo."
+    : "El acceso caducó; se renovará solo al usarlo.";
 
   async function beginAuth() {
     setOpening(true);
@@ -133,6 +132,8 @@ export function ConnectionsModal({
               <span className="conn__name">Google</span>
               {status === null ? (
                 <span className="conn__badge conn__badge--idle">Comprobando…</span>
+              ) : mustReconnect ? (
+                <span className="conn__badge conn__badge--warn">Hay que reconectar</span>
               ) : status.connected ? (
                 <span className="conn__badge conn__badge--on">
                   <DotIcon /> Conectado
@@ -168,7 +169,9 @@ export function ConnectionsModal({
             ) : (
               <div className="conn__detail">
                 <p className="conn__hint">
-                  Conecta tu cuenta de Google para que Nexa pueda actuar en tu nombre:
+                  {mustReconnect
+                    ? "El acceso a Google caducó y ya no se puede renovar. Vuelve a conectar la cuenta para que Nexa pueda actuar en tu nombre:"
+                    : "Conecta tu cuenta de Google para que Nexa pueda actuar en tu nombre:"}
                 </p>
                 <ul className="scope-list">
                   {SCOPES.map((s) => (

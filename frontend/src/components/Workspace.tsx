@@ -4,6 +4,7 @@ import {
   deleteConversation,
   getGoogleStatus,
   listConversations,
+  needsGoogleReconnect,
   type ConversationSummary,
   type GoogleStatus,
   type Voice,
@@ -97,14 +98,22 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
   }, []);
 
   // Tras cada turno: resalta la conversación vigente y refresca la lista (orden y
-  // preview cambian). No remonta el panel.
+  // preview cambian). No remonta el panel. También refresca el estado de Google: una
+  // tool puede haber descubierto en este turno que el acceso ya no se renueva.
   const onConversationActivity = useCallback(
     (id: number) => {
       setActiveId(id);
       void loadList();
+      void loadGoogleStatus();
     },
-    [loadList],
+    [loadList, loadGoogleStatus],
   );
+
+  // El panel muestra el estado al día, no el de cuando se cargó la página.
+  const openConnections = useCallback(() => {
+    setConnectionsOpen(true);
+    void loadGoogleStatus();
+  }, [loadGoogleStatus]);
 
   const handleDelete = useCallback(
     async (id: number) => {
@@ -141,12 +150,14 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
         loading={listLoading}
         error={listError}
         open={sidebarOpen}
-        googleConnected={!!googleStatus?.connected}
+        googleState={
+          needsGoogleReconnect(googleStatus) ? "warn" : googleStatus?.connected ? "on" : "off"
+        }
         onSelect={selectConversation}
         onNew={newConversation}
         onDelete={handleDelete}
         onOpenDocuments={() => setDocumentsOpen(true)}
-        onOpenConnections={() => setConnectionsOpen(true)}
+        onOpenConnections={openConnections}
         onSignOut={onSignOut}
       />
       <Chat

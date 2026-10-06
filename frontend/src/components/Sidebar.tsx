@@ -7,7 +7,7 @@ interface SidebarProps {
   loading: boolean;
   error: string | null;
   open: boolean;
-  googleConnected: boolean;
+  googleState: "on" | "warn" | "off";
   onSelect: (id: number) => void;
   onNew: () => void;
   onDelete: (id: number) => void;
@@ -40,7 +40,7 @@ export function Sidebar({
   loading,
   error,
   open,
-  googleConnected,
+  googleState,
   onSelect,
   onNew,
   onDelete,
@@ -100,8 +100,14 @@ export function Sidebar({
           <LinkIcon />
           Conexiones
           <span
-            className={`conn-dot${googleConnected ? " conn-dot--on" : ""}`}
-            aria-label={googleConnected ? "Google conectado" : "Google sin conectar"}
+            className={`conn-dot${googleState === "off" ? "" : ` conn-dot--${googleState}`}`}
+            aria-label={
+              googleState === "on"
+                ? "Google conectado"
+                : googleState === "warn"
+                  ? "Hay que reconectar Google"
+                  : "Google sin conectar"
+            }
           />
         </button>
         <button className="btn btn--ghost btn--block-left" type="button" onClick={onSignOut}>
