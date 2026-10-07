@@ -41,6 +41,8 @@ SYSTEM_PROMPT = (
     "realmente a la herramienta. Ante la duda, USA la herramienta.\n"
     "- Basa tu respuesta ÚNICAMENTE en lo que devuelvan las herramientas. Solo si no "
     "devuelven nada, di que no encontraste información.\n"
+    "- Cada fragmento de `search_knowledge_base` empieza con '[Fuente: archivo]'. Al "
+    "responder con esa información, di de qué archivo sale.\n"
     "- Cuando el usuario te pida recordar, anotar o agendar algo, USA `create_task`, "
     "pasando la fecha TAL COMO la dijo el usuario (p. ej. 'el viernes', 'mañana', "
     "'15 de junio'). NO la conviertas a otro formato ni calcules el día; de eso se "
@@ -51,11 +53,17 @@ SYSTEM_PROMPT = (
     "Si hay varias que coinciden, pregunta cuál antes de actuar.\n"
     "- Para enviar una notificación o alerta al sistema externo, usa `call_webhook`.\n"
     "- Para ver reuniones, citas, eventos, la agenda o qué tiene agendado el "
-    "usuario en su calendario, usa `list_calendar_events`.\n"
+    "usuario en su calendario, usa `list_calendar_events`. Si pregunta por un día "
+    "concreto ('¿qué tengo el jueves?'), pasa `date` TAL COMO lo dijo; para varios "
+    "días ('esta semana'), añade `days`.\n"
     "- Para AGENDAR o CREAR una reunión, cita o evento en el calendario, usa "
     "`create_calendar_event` (pedirá confirmación antes de crearlo). Pasa la fecha "
     "y la hora TAL COMO las dijo el usuario ('mañana', 'el viernes', '3pm', "
-    "'15:00'); NO las conviertas ni calcules, de eso se encarga la herramienta.\n"
+    "'15:00'); NO las conviertas ni calcules, de eso se encarga la herramienta. "
+    "Solo si el usuario pide invitar a alguien, pasa sus correos en `attendees`.\n"
+    "- Para MOVER, CAMBIAR o BORRAR un evento, primero llama `list_calendar_events` "
+    "para ver su id y luego `update_calendar_event` o `delete_calendar_event` (piden "
+    "confirmación). NO digas que lo cambiaste o borraste: la herramienta solo lo propone.\n"
     "- Para ENVIAR un correo a alguien, usa `send_email` con destinatario, asunto y "
     "cuerpo (mostrará el correo completo y pedirá confirmación antes de enviarlo). "
     "NO afirmes que enviaste el correo: la herramienta solo lo propone.\n"
@@ -204,6 +212,33 @@ def _asks_confirmation(text: str) -> bool:
     return bool(_CONFIRM_REQUEST.search(text or ""))
 
 
+# --- Llamadas a herramientas escritas como texto ----------------------------
+# A veces el modelo ESCRIBE la llamada en vez de hacerla: 'CallChecka_webhook({"message":
+# ...})', '<tool_call>{...}</tool_call>', 'search_knowledge_base(...)'. No se ejecuta
+# nada y el usuario vería ese texto como respuesta. El eval de enrutado
+# (app/eval/tool_routing.py) lo midió en hasta 4 de 38 primeros mensajes con qwen2.5
+# 7B; un reintento pidiéndole que la llame de verdad no lo arreglaba de forma fiable.
+# Se sustituye por un aviso, como las propuestas imitadas. Los bloques de código no
+# cuentan: ahí un `guardar({"id": 1})` es legítimo.
+_TOOL_CALL_AS_TEXT_RE = re.compile(
+    r"</?tool_call>"
+    r"|\bCallCheck"                                             # artefacto de qwen2.5 al fallar
+    r"|\b(?:" + "|".join(t.name for t in get_tools()) + r")\("  # search_knowledge_base(...)
+    r"|\b\w+\s*\(\s*\{\s*\"\w+\"\s*:"                           # nombre({"arg": ...})
+)
+_CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
+
+_TOOL_CALL_AS_TEXT = (
+    "Intenté usar una de mis herramientas, pero escribí la llamada en vez de hacerla, "
+    "así que no se hizo nada. ¿Me lo pides de nuevo, quizá con otras palabras?"
+)
+
+
+def is_tool_call_as_text(text: str) -> bool:
+    """¿La respuesta contiene una llamada a herramienta escrita como texto?"""
+    return bool(_TOOL_CALL_AS_TEXT_RE.search(_CODE_BLOCK.sub("", text or "")))
+
+
 def _stale_confirmation_reply(user_input: str, history: list[dict]) -> str | None:
     """Respuesta fija para un sí/no que contesta a una propuesta que ya NO está
     pendiente: caducó, o el modelo la imitó sin crearla. Sin esto, el "sí" iría al
@@ -348,6 +383,9 @@ async def run_agent(conversation_id: int, user_input: str) -> str:
         # confirmar. Se sustituye también en el historial, para que no la vuelva a copiar.
         answer = _NO_ACTION_PREPARED
         logger.warning("imitated proposal replaced: no pending action")
+    elif is_tool_call_as_text(answer):
+        answer = _TOOL_CALL_AS_TEXT
+        logger.warning("tool call written as text replaced")
 
     # Memoria de corto plazo (Redis) + registro durable (Postgres).
     await memory.append(conversation_id, "user", user_input)
@@ -490,6 +528,10 @@ async def run_agent_stream(conversation_id: int, user_input: str):
             # mostraron: `replace` le dice a la UI que sustituya ese texto.
             answer = _NO_ACTION_PREPARED
             logger.warning("imitated proposal replaced: no pending action (stream)")
+            yield {"type": "replace", "value": answer}
+        elif is_tool_call_as_text(answer):
+            answer = _TOOL_CALL_AS_TEXT
+            logger.warning("tool call written as text replaced (stream)")
             yield {"type": "replace", "value": answer}
 
     # Persistencia diferida (con la respuesta completa), igual que run_agent.

@@ -4,7 +4,6 @@ import { ApiError, connectGoogle, needsGoogleReconnect, startGoogleAuth } from "
 import type { GoogleStatus } from "../api";
 
 interface ConnectionsModalProps {
-  token: string;
   status: GoogleStatus | null;
   onClose: () => void;
   onConnected: () => Promise<void> | void; // refresca el estado en el padre
@@ -35,7 +34,6 @@ function extractCode(raw: string): string {
 }
 
 export function ConnectionsModal({
-  token,
   status,
   onClose,
   onConnected,
@@ -73,7 +71,7 @@ export function ConnectionsModal({
     setOpening(true);
     setError(null);
     try {
-      const { auth_url } = await startGoogleAuth(token);
+      const { auth_url } = await startGoogleAuth();
       setAuthUrl(auth_url);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -93,7 +91,7 @@ export function ConnectionsModal({
     setConnecting(true);
     setError(null);
     try {
-      await connectGoogle(token, c);
+      await connectGoogle(c);
       await onConnected();
       // Éxito: vuelve a la vista de estado conectado.
       setReconnecting(false);

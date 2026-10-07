@@ -3,7 +3,7 @@
 Antes, un documento sin texto extraíble (un PDF escaneado, un archivo vacío) se
 quedaba en 'pending' para siempre: la UI lo mostraba «Procesando…» sin fin. Lo
 mismo pasaba con un fallo al ingerir desde Drive. Y /documents/upload aceptaba
-cualquier tipo, así que un .docx se indexaba como texto basura. Ahora:
+cualquier tipo, así que un .xlsx se indexaba como texto basura. Ahora:
   - sin texto -> 'empty', y se borran los chunks de una ingesta anterior;
   - un fallo al ingerir desde Drive -> 'failed';
   - un tipo que el parser no sabe leer -> 415, sin crear nada.
@@ -79,12 +79,12 @@ async def test_reingesting_without_text_drops_stale_chunks(tmp_path):
 async def test_upload_rejects_types_the_parser_cannot_read(client, auth_headers):
     resp = await client.post(
         "/documents/upload",
-        files={"file": ("informe.docx", b"PK\x03\x04 binario", "application/octet-stream")},
+        files={"file": ("ventas.xlsx", b"PK\x03\x04 binario", "application/octet-stream")},
         headers=auth_headers,
     )
 
     assert resp.status_code == 415
-    assert ".docx" in resp.json()["detail"]
+    assert ".xlsx" in resp.json()["detail"]
     async with engine.begin() as conn:
         assert (await conn.execute(text("SELECT count(*) FROM documents"))).scalar_one() == 0
 

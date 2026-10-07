@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-env-with-secrets-token-urlsafe-48"
     jwt_algorithm: str = "HS256"
     jwt_expires_hours: int = 24
+    # La cookie de sesión de la web solo viaja por HTTPS si es True. En local
+    # (http://localhost) tiene que ser False; ponlo a True detrás de HTTPS.
+    session_cookie_secure: bool = False
     # --------------------------------------------------------------------
 
     ollama_base_url: str = "http://ollama:11434"
@@ -94,6 +97,14 @@ class Settings(BaseSettings):
     # El backend hace de proxy autenticado; el servicio tts no se expone fuera
     # de la red interna de compose. Override por env si cambia host/puerto.
     tts_base_url: str = "http://tts:8000"
+
+    # --- Recordatorios (resumen diario de tareas) -------------------------
+    # Correo al que se manda cada día el resumen de las tareas de hoy y las
+    # vencidas, por Gmail con la cuenta de Google conectada. Vacío: se usa el
+    # webhook si lo hay; sin ninguno de los dos, no se manda nada.
+    reminder_email: str = ""
+    # Hora local (0-23, en calendar_timezone) a partir de la cual se manda.
+    reminder_hour: int = 8
 
     # --- http_get --------------------------------------------------------
     # Dominios que la tool http_get puede consultar SIEMPRE (incluye subdominios),

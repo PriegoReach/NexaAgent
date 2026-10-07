@@ -1,0 +1,100 @@
+# Dataset de enrutado: mensaje del usuario -> PRIMERA herramienta que debe llamar
+# el agente ("none" = contestar sin herramientas). `esperado` admite una lista si
+# hay varias respuestas válidas. Lo lee app/eval/tool_routing.py; crece añadiendo
+# entradas, sin tocar código. Cada mensaje es el primero de una conversación nueva.
+
+# --- Documentos de la empresa (RAG) ---
+- mensaje: "¿Cuál es el código de autorización del Proyecto Rubí?"
+  esperado: search_knowledge_base
+- mensaje: "¿Cuántos días de vacaciones da la política de la empresa?"
+  esperado: search_knowledge_base
+- mensaje: "¿Quién es el responsable del Proyecto Esmeralda?"
+  esperado: search_knowledge_base
+- mensaje: "Resume lo que dice el documento del presupuesto 2026"
+  esperado: search_knowledge_base
+- mensaje: "¿Qué dice el contrato de servicios sobre la cancelación?"
+  esperado: search_knowledge_base
+
+# --- Memoria de conversaciones pasadas ---
+- mensaje: "¿Te acuerdas de cómo se llama mi perro?"
+  esperado: search_long_term_memory
+- mensaje: "¿Qué recuerdas de mí?"
+  esperado: search_long_term_memory
+- mensaje: "La otra vez te dije a qué hora entro a trabajar, ¿cuál era?"
+  esperado: search_long_term_memory
+
+# --- Tareas ---
+- mensaje: "Recuérdame llamar al contador el viernes"
+  esperado: create_task
+- mensaje: "Anota que tengo que pagar la luz mañana"
+  esperado: create_task
+- mensaje: "Agrega una tarea: revisar el informe de ventas el 15 de octubre"
+  esperado: create_task
+- mensaje: "¿Qué tareas tengo pendientes?"
+  esperado: list_tasks
+# Por descripción: primero list_tasks para ver el id (regla del system prompt).
+- mensaje: "Marca como hecha la tarea de pagar la luz"
+  esperado: list_tasks
+- mensaje: "Borra la tarea de llamar al contador"
+  esperado: list_tasks
+- mensaje: "Marca la tarea 12 como completada"
+  esperado: update_task
+- mensaje: "Elimina la tarea número 7"
+  esperado: delete_task
+
+# --- Calendario ---
+- mensaje: "¿Qué tengo en el calendario mañana?"
+  esperado: list_calendar_events
+- mensaje: "¿Tengo reuniones esta semana?"
+  esperado: list_calendar_events
+# Sin id: primero list_calendar_events para encontrar el evento.
+- mensaje: "Mueve mi reunión del jueves a las 5 de la tarde"
+  esperado: list_calendar_events
+- mensaje: "Agéndame una reunión con el equipo de ventas el lunes a las 10am"
+  esperado: create_calendar_event
+- mensaje: "Crea un evento 'Dentista' el 20 de octubre a las 4pm"
+  esperado: create_calendar_event
+- mensaje: "Pon una cita con Laura mañana a las 3pm e invita a laura@example.com"
+  esperado: create_calendar_event
+- mensaje: "Cambia el evento con id 7h3k2l9 al viernes a las 11am"
+  esperado: update_calendar_event
+- mensaje: "Borra del calendario el evento con id 7h3k2l9"
+  esperado: delete_calendar_event
+
+# --- Correo ---
+- mensaje: "Envíale un correo a juan@example.com diciéndole que la junta se movió al martes"
+  esperado: send_email
+- mensaje: "Escribe un email a rh@example.com pidiendo mi constancia laboral"
+  esperado: send_email
+- mensaje: "Manda un mail a ana@example.com con asunto 'Factura' y dile que ya la pagué"
+  esperado: send_email
+
+# --- Google Drive ---
+- mensaje: "Busca en mi Drive archivos de ventas"
+  esperado: list_drive_files
+- mensaje: "¿Qué documentos tengo en Google Drive sobre el presupuesto?"
+  esperado: list_drive_files
+- mensaje: "Indexa el archivo de Drive con id 1AbCdEfGhIjK"
+  esperado: ingest_drive_file
+
+# --- Webhook ---
+- mensaje: "Manda una alerta al sistema externo: el servidor de pagos está caído"
+  esperado: call_webhook
+- mensaje: "Notifica al sistema de monitoreo que terminó el respaldo"
+  esperado: call_webhook
+
+# --- Web ---
+- mensaje: "Consulta https://api.github.com/repos/python/cpython y dime cuántas estrellas tiene"
+  esperado: http_get
+- mensaje: "¿Qué dice la página https://example.com?"
+  esperado: http_get
+
+# --- Sin herramientas ---
+- mensaje: "Hola, ¿cómo estás?"
+  esperado: none
+- mensaje: "Gracias, eso es todo"
+  esperado: none
+- mensaje: "¿Qué cosas puedes hacer?"
+  esperado: none
+- mensaje: "Escribe un poema corto sobre el café"
+  esperado: none

@@ -144,9 +144,12 @@ services:
       - google_client_id
       - google_client_secret
 
+  # Ingesta de documentos, memoria de largo plazo y, con --beat (programador
+  # embebido, válido con un solo worker), los recordatorios de cada hora
+  # (app/workers/reminders.py). El archivo de estado del beat va a /tmp.
   worker:
     build: .
-    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info
+    command: celery -A app.workers.celery_app.celery_app worker --beat --schedule /tmp/celerybeat-schedule --loglevel=info
     env_file: .env
     depends_on:
       init-ollama:
@@ -166,6 +169,11 @@ services:
       - jwt_secret
       - auth_password
       - postgres_password
+      # Los recordatorios salen del worker: Gmail (con renovación del token de
+      # Google) o el webhook.
+      - webhook_url
+      - google_client_id
+      - google_client_secret
 
   # Servicio TTS (XTTS-v2) — contenedor propio con GPU, aislado del backend.
   # Sin 'ports': solo accesible en la red interna de compose (lo consume la api como

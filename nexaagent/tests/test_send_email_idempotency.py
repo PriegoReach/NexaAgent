@@ -133,3 +133,16 @@ async def test_uncertain_failure_is_not_resent_nor_reported_as_sent(monkeypatch,
     assert "no sé si llegó a salir" in second
     assert "ya se había enviado" not in second
     assert await _statuses() == ["uncertain"]
+
+
+async def test_send_email_now_reports_how_each_send_ended(monkeypatch):
+    """Los recordatorios usan send_email_now y deciden con su estado si reintentar."""
+    _fake_gmail(monkeypatch, 403, 200, 500)
+    other = {**_ARGS, "subject": "Otro asunto"}
+
+    assert (await gmail.send_email_now(**_ARGS)).status == "failed"
+    assert (await gmail.send_email_now(**_ARGS)).status == "sent"
+    assert await gmail.send_email_now(**_ARGS) == gmail.SendResult(
+        "sent", "Ese correo ya se había enviado (no lo reenvié).")
+    assert (await gmail.send_email_now(**other)).status == "uncertain"
+    assert (await gmail.send_email_now(**other)).status == "uncertain"   # no se reenvía

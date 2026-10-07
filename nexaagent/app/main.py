@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.exceptions import UpstreamUnavailable
 from app.core.logging_config import setup_logging
 from app.api.request_context import RequestIDMiddleware
-from app.api import auth, chat, conversations, documents, health, metrics, oauth, tts
+from app.api import auth, chat, conversations, documents, health, memories, metrics, oauth, tts
 from app.core.config import settings
 
 
@@ -40,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(conversations.router)
+app.include_router(memories.router)
 app.include_router(oauth.router)
 app.include_router(tts.router)
 # El orchestrator traduce httpx.ConnectError/TimeoutException a UpstreamUnavailable

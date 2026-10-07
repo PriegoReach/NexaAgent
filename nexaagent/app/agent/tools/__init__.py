@@ -6,7 +6,12 @@ from app.agent.tools.web_request import http_get
 from app.agent.tools.create_task import create_task
 from app.agent.tools.manage_tasks import list_tasks, update_task, delete_task
 from app.agent.tools.call_webhook import call_webhook
-from app.agent.tools.calendar import list_calendar_events, create_calendar_event
+from app.agent.tools.calendar import (
+    create_calendar_event,
+    delete_calendar_event,
+    list_calendar_events,
+    update_calendar_event,
+)
 from app.agent.tools.gmail import send_email
 from app.agent.tools.drive import list_drive_files, ingest_drive_file
 
@@ -23,6 +28,8 @@ def get_tools() -> list[StructuredTool]:
         call_webhook,
         list_calendar_events,
         create_calendar_event,
+        update_calendar_event,
+        delete_calendar_event,
         send_email,
         list_drive_files,
         ingest_drive_file,

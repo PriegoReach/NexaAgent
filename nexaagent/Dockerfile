@@ -11,6 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc \
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
 
+# OCR para PDFs escaneados e imágenes (app/rag/ingest.py): tesseract con español e
+# inglés, y pdftoppm (poppler) para pasar las páginas de un PDF a imagen. Va
+# DESPUÉS de las capas de pip: añadirlo no obliga a reinstalar torch.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr tesseract-ocr-spa poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dev/test deps (pytest, pytest-asyncio, ruff) solo bajo demanda, para no
 # inflar la imagen de producción. El servicio `tests` del compose construye con
 # INSTALL_DEV=true; api/worker la dejan en false (no instalan nada extra).
