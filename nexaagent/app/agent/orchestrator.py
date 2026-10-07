@@ -212,6 +212,33 @@ def _asks_confirmation(text: str) -> bool:
     return bool(_CONFIRM_REQUEST.search(text or ""))
 
 
+# --- Llamadas a herramientas escritas como texto ----------------------------
+# A veces el modelo ESCRIBE la llamada en vez de hacerla: 'CallChecka_webhook({"message":
+# ...})', '<tool_call>{...}</tool_call>', 'search_knowledge_base(...)'. No se ejecuta
+# nada y el usuario vería ese texto como respuesta. El eval de enrutado
+# (app/eval/tool_routing.py) lo midió en hasta 4 de 38 primeros mensajes con qwen2.5
+# 7B; un reintento pidiéndole que la llame de verdad no lo arreglaba de forma fiable.
+# Se sustituye por un aviso, como las propuestas imitadas. Los bloques de código no
+# cuentan: ahí un `guardar({"id": 1})` es legítimo.
+_TOOL_CALL_AS_TEXT_RE = re.compile(
+    r"</?tool_call>"
+    r"|\bCallCheck"                                             # artefacto de qwen2.5 al fallar
+    r"|\b(?:" + "|".join(t.name for t in get_tools()) + r")\("  # search_knowledge_base(...)
+    r"|\b\w+\s*\(\s*\{\s*\"\w+\"\s*:"                           # nombre({"arg": ...})
+)
+_CODE_BLOCK = re.compile(r"```.*?```", re.DOTALL)
+
+_TOOL_CALL_AS_TEXT = (
+    "Intenté usar una de mis herramientas, pero escribí la llamada en vez de hacerla, "
+    "así que no se hizo nada. ¿Me lo pides de nuevo, quizá con otras palabras?"
+)
+
+
+def is_tool_call_as_text(text: str) -> bool:
+    """¿La respuesta contiene una llamada a herramienta escrita como texto?"""
+    return bool(_TOOL_CALL_AS_TEXT_RE.search(_CODE_BLOCK.sub("", text or "")))
+
+
 def _stale_confirmation_reply(user_input: str, history: list[dict]) -> str | None:
     """Respuesta fija para un sí/no que contesta a una propuesta que ya NO está
     pendiente: caducó, o el modelo la imitó sin crearla. Sin esto, el "sí" iría al
@@ -356,6 +383,9 @@ async def run_agent(conversation_id: int, user_input: str) -> str:
         # confirmar. Se sustituye también en el historial, para que no la vuelva a copiar.
         answer = _NO_ACTION_PREPARED
         logger.warning("imitated proposal replaced: no pending action")
+    elif is_tool_call_as_text(answer):
+        answer = _TOOL_CALL_AS_TEXT
+        logger.warning("tool call written as text replaced")
 
     # Memoria de corto plazo (Redis) + registro durable (Postgres).
     await memory.append(conversation_id, "user", user_input)
@@ -498,6 +528,10 @@ async def run_agent_stream(conversation_id: int, user_input: str):
             # mostraron: `replace` le dice a la UI que sustituya ese texto.
             answer = _NO_ACTION_PREPARED
             logger.warning("imitated proposal replaced: no pending action (stream)")
+            yield {"type": "replace", "value": answer}
+        elif is_tool_call_as_text(answer):
+            answer = _TOOL_CALL_AS_TEXT
+            logger.warning("tool call written as text replaced (stream)")
             yield {"type": "replace", "value": answer}
 
     # Persistencia diferida (con la respuesta completa), igual que run_agent.
