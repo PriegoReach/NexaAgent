@@ -26,6 +26,11 @@ docker-compose up --build
 
 **First run takes a while (around 10 minutes or more, depending on your connection)** because Ollama downloads the models (qwen2.5 ~4.7GB, nomic-embed-text ~274MB).
 
+No NVIDIA GPU? Add the CPU override, which drops the GPU reservations (slower, but it works):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build
+```
+
 API docs: http://localhost:8000/docs
 
 ## Try it

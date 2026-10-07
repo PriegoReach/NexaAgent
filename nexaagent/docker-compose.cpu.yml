@@ -1,0 +1,12 @@
+# Para un equipo sin GPU NVIDIA. Se usa encima del compose principal:
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build
+# Quita las reservas de GPU: sin el runtime nvidia, Docker no arranca los
+# contenedores que la piden. Ollama, el reranker (app/rag/reranker.py) y la voz
+# detectan que no hay CUDA y funcionan en CPU, más lentos.
+services:
+  ollama:
+    deploy: !reset {}
+  api:
+    deploy: !reset {}
+  tts:
+    deploy: !reset {}

@@ -18,7 +18,7 @@ Nexa/
 ## Qué hace
 
 - **Chat con un agente tool-calling** sobre un LLM local (Ollama), con memoria de corto plazo (Redis) y de largo plazo (resúmenes recuperables vía pgvector).
-- **RAG híbrido**: documentos troceados, embebidos en pgvector, recuperados por búsqueda vectorial + full-text y reordenados con un **cross-encoder** (`bge-reranker-v2-m3`) en GPU.
+- **RAG híbrido**: documentos troceados, embebidos en pgvector, recuperados por búsqueda vectorial + full-text y reordenados con un **cross-encoder** (`bge-reranker-v2-m3`), en GPU si la hay.
 - **Acciones del agente** mediante herramientas: tareas, webhooks, e integraciones Google (Calendar, Gmail, Drive) vía OAuth.
 - **Confirmación humana e idempotencia**: enviar un correo, crear un evento en Calendar o borrar una tarea solo ocurre tras un "sí" explícito del usuario (antes se muestra qué se va a hacer; en un correo, destinatario, asunto y cuerpo completos). Además, el mismo correo, webhook, tarea o evento no se duplica aunque se reintente.
 - **API REST** documentada (OpenAPI/Swagger) con autenticación **JWT Bearer** y streaming SSE.
@@ -30,7 +30,7 @@ Nexa/
 |---|---|
 | `search_knowledge_base` | Búsqueda RAG sobre los documentos ingeridos |
 | `search_long_term_memory` | Recupera memorias de largo plazo del usuario |
-| `http_get` | Petición HTTP GET a una URL |
+| `http_get` | Petición HTTP GET a una URL pública de un dominio que hayas escrito en la conversación |
 | `create_task` / `list_tasks` / `update_task` / `delete_task` | Gestión de tareas |
 | `call_webhook` | Dispara un webhook configurado |
 | `list_calendar_events` / `create_calendar_event` | Google Calendar |
@@ -65,7 +65,7 @@ Nexa/
 
 | Componente | Rol |
 |---|---|
-| **FastAPI** (`api`) | Capa API async, agente, RAG y reranking (cross-encoder en GPU) |
+| **FastAPI** (`api`) | Capa API async, agente, RAG y reranking (cross-encoder en GPU, o en CPU si no hay) |
 | **Celery worker** | Ingesta de documentos fuera de la ruta de petición |
 | **PostgreSQL + pgvector** | Conversaciones, mensajes, documentos, vectores, tareas, cuentas OAuth |
 | **Redis** | Memoria de corto plazo + broker de Celery |
@@ -76,7 +76,7 @@ Nexa/
 ## Requisitos
 
 - **Docker** y **Docker Compose**.
-- **GPU NVIDIA** con el runtime de Docker para GPU (el `docker-compose.yml` reserva GPU para Ollama y para el reranker dentro de `api`). Sin GPU, quita los bloques `deploy.resources.reservations.devices` del compose.
+- **GPU NVIDIA** con el runtime de Docker para GPU, recomendada (el `docker-compose.yml` reserva GPU para Ollama, el reranker dentro de `api` y la voz). **Sin GPU** también funciona, más lento: arranca con `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build`, que quita esas reservas; el reranker detecta que no hay CUDA y usa la CPU.
 - **Node 18+** solo si vas a desarrollar el frontend (probado con Node 22).
 
 ---
@@ -222,5 +222,6 @@ EMBEDDING_DIM=1024                   # debe coincidir con la salida del modelo
 
 - Los **secretos reales** (`nexaagent/secrets/`, cualquier `.env`) están en `.gitignore` y **no** se versionan.
 - **PostgreSQL, Redis y Ollama solo escuchan en `127.0.0.1`**: se pueden usar desde este equipo, pero no desde otros de la red local. PostgreSQL se publica en el **5433** (no en el 5432, para no chocar con un PostgreSQL instalado en el propio equipo). La API (`:8000`) sí escucha en todas las interfaces y exige JWT.
+- **`http_get` solo consulta direcciones públicas** (nada de localhost, la red local ni los servicios internos de Docker, también tras una redirección) y **solo dominios que hayas escrito en la conversación** o que estén en `HTTP_GET_ALLOWED_DOMAINS`. Así, unas instrucciones escondidas en un documento no pueden hacer que el agente mande datos a un sitio que no pediste.
 - La autenticación es JWT HS256 con caducidad; rotar `jwt_secret` invalida todos los tokens emitidos.
 - Las credenciales OAuth estáticas (`client_id`/`client_secret`) van a secrets; los tokens OAuth dinámicos viven en la tabla `oauth_accounts` de Postgres.
