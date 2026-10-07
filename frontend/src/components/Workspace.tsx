@@ -15,7 +15,6 @@ import { ConnectionsModal } from "./ConnectionsModal";
 import { DocumentsModal } from "./DocumentsModal";
 
 interface WorkspaceProps {
-  token: string;
   onSignOut: () => void;
   onSessionExpired: () => void;
 }
@@ -29,7 +28,7 @@ interface WorkspaceProps {
 //    curso no se borra.
 //  - `activeId` es solo para resaltar en la lista; se actualiza también cuando un
 //    turno crea/usa una conversación.
-export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps) {
+export function Workspace({ onSignOut, onSessionExpired }: WorkspaceProps) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -49,17 +48,17 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
 
   const loadGoogleStatus = useCallback(async () => {
     try {
-      setGoogleStatus(await getGoogleStatus(token));
+      setGoogleStatus(await getGoogleStatus());
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) onSessionExpired();
       // Otros errores: dejamos el indicador como esté (no es crítico).
     }
-  }, [token, onSessionExpired]);
+  }, [onSessionExpired]);
 
   const loadList = useCallback(async () => {
     setListError(null);
     try {
-      const res = await listConversations(token);
+      const res = await listConversations();
       setConversations(res.items);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -72,7 +71,7 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
     } finally {
       setListLoading(false);
     }
-  }, [token, onSessionExpired]);
+  }, [onSessionExpired]);
 
   useEffect(() => {
     void loadList();
@@ -118,7 +117,7 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
   const handleDelete = useCallback(
     async (id: number) => {
       try {
-        await deleteConversation(token, id);
+        await deleteConversation(id);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           onSessionExpired();
@@ -134,7 +133,7 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
         newConversation();
       }
     },
-    [token, onSessionExpired, loadList, activeId, selectedConvId, newConversation],
+    [onSessionExpired, loadList, activeId, selectedConvId, newConversation],
   );
 
   const paneKey = `${selectedConvId ?? "new"}-${remount}`;
@@ -162,7 +161,6 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
       />
       <Chat
         key={paneKey}
-        token={token}
         conversationId={selectedConvId}
         voice={voice}
         onVoiceChange={setVoice}
@@ -173,7 +171,6 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
 
       {connectionsOpen && (
         <ConnectionsModal
-          token={token}
           status={googleStatus}
           onClose={() => setConnectionsOpen(false)}
           onConnected={loadGoogleStatus}
@@ -183,7 +180,6 @@ export function Workspace({ token, onSignOut, onSessionExpired }: WorkspaceProps
 
       {documentsOpen && (
         <DocumentsModal
-          token={token}
           onClose={() => setDocumentsOpen(false)}
           onSessionExpired={onSessionExpired}
         />

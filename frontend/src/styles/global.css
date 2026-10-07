@@ -409,6 +409,82 @@ body {
   word-wrap: break-word;
 }
 
+/* --- Respuestas en Markdown ------------------------------------------------ */
+/* El espaciado lo dan los bloques (p, listas, código), no los saltos de línea. */
+.msg__md {
+  white-space: normal;
+  min-width: 0;
+}
+.msg__md > :first-child {
+  margin-top: 0;
+}
+.msg__md > :last-child {
+  margin-bottom: 0;
+}
+.msg__md p,
+.msg__md ul,
+.msg__md ol,
+.msg__md pre,
+.msg__md blockquote,
+.msg__md table {
+  margin: 0 0 10px;
+}
+.msg__md h1,
+.msg__md h2,
+.msg__md h3,
+.msg__md h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+.msg__md ul,
+.msg__md ol {
+  padding-left: 22px;
+}
+.msg__md li + li {
+  margin-top: 2px;
+}
+.msg__md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-sunken);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.msg__md pre {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+.msg__md pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+}
+.msg__md a {
+  color: var(--info-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.msg__md blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 10px;
+  color: var(--text-muted);
+}
+.msg__md table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.msg__md th,
+.msg__md td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
 /* --- Botón "leer en voz alta" (por mensaje del agente, bajo demanda) -------- */
 .msg__actions {
   display: flex;

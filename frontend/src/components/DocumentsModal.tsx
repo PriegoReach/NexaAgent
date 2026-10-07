@@ -3,7 +3,6 @@ import { ApiError, deleteDocument, listDocuments, uploadDocument } from "../api"
 import type { DocumentItem } from "../api";
 
 interface DocumentsModalProps {
-  token: string;
   onClose: () => void;
   onSessionExpired: () => void;
 }
@@ -19,7 +18,7 @@ function isSupported(file: File): boolean {
   return dot !== -1 && SUPPORTED.includes(file.name.slice(dot).toLowerCase());
 }
 
-export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsModalProps) {
+export function DocumentsModal({ onClose, onSessionExpired }: DocumentsModalProps) {
   const [docs, setDocs] = useState<DocumentItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -28,7 +27,7 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
 
   const refresh = useCallback(async () => {
     try {
-      setDocs(await listDocuments(token));
+      setDocs(await listDocuments());
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onSessionExpired();
@@ -36,7 +35,7 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
       }
       setError(err instanceof Error ? err.message : "No se pudieron cargar los documentos.");
     }
-  }, [token, onSessionExpired]);
+  }, [onSessionExpired]);
 
   useEffect(() => {
     void refresh();
@@ -80,7 +79,7 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
       setUploading(true);
       try {
         for (const file of accepted) {
-          await uploadDocument(token, file);
+          await uploadDocument(file);
         }
         await refresh();
       } catch (err) {
@@ -94,7 +93,7 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [token, refresh, onSessionExpired],
+    [refresh, onSessionExpired],
   );
 
   const handleDelete = useCallback(
@@ -102,7 +101,7 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
       // Optimista: lo quitamos de la lista ya; si falla, recargamos.
       setDocs((prev) => (prev ? prev.filter((d) => d.id !== id) : prev));
       try {
-        await deleteDocument(token, id);
+        await deleteDocument(id);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           onSessionExpired();
@@ -112,7 +111,7 @@ export function DocumentsModal({ token, onClose, onSessionExpired }: DocumentsMo
         void refresh();
       }
     },
-    [token, refresh, onSessionExpired],
+    [refresh, onSessionExpired],
   );
 
   return (

@@ -2,9 +2,15 @@
 // rutas, los shapes de request/response y el manejo de errores. Los componentes
 // no hacen fetch directo, llaman a estas funciones.
 //
+// La sesión va en una cookie httpOnly que pone /auth/login y que el navegador
+// manda sola (credentials: "include"): la web nunca ve el token, y la sesión
+// sobrevive a recargar la página.
+//
 // Shapes verificados contra el backend (no asumidos):
-//   POST /auth/login    body {password}                       -> {access_token, token_type, expires_in}
-//   POST /chat/stream   body {message, conversation_id?} (Bearer) -> SSE (text/event-stream)
+//   POST /auth/login    body {password} -> {access_token, ...} + cookie de sesión
+//   GET  /auth/session                  -> 200 {authenticated, expires_at} | 401
+//   POST /auth/logout                   -> 204 (borra la cookie)
+//   POST /chat/stream   body {message, conversation_id?} -> SSE (text/event-stream)
 import { API_URL } from "./config";
 
 // Error con el status HTTP adjunto, para que la UI distinga 401 (sesión) de
@@ -27,11 +33,12 @@ function networkError(): ApiError {
   );
 }
 
-export async function login(password: string): Promise<string> {
+export async function login(password: string): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
@@ -45,9 +52,24 @@ export async function login(password: string): Promise<string> {
   if (!res.ok) {
     throw new ApiError(res.status, `Error del servidor (${res.status}).`);
   }
+}
 
-  const data = (await res.json()) as { access_token: string };
-  return data.access_token;
+// ¿Sigue viva la sesión? Se pregunta al cargar la página: true -> chat, false -> login.
+export async function checkSession(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/auth/session`, { credentials: "include" });
+    return res.ok;
+  } catch {
+    throw networkError();
+  }
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
+  } catch {
+    /* sin red: la cookie caduca sola; la UI vuelve al login igual */
+  }
 }
 
 // --- Streaming del chat (SSE) ----------------------------------------------
@@ -73,9 +95,8 @@ export type StreamEvent =
 
 // Async generator: el componente hace `for await (const ev of streamChat(...))`.
 // Usamos fetch + ReadableStream (no EventSource) porque EventSource solo hace GET
-// y no permite cabeceras propias — y aquí el JWT viaja en Authorization.
+// y aquí hay que mandar un cuerpo JSON por POST.
 export async function* streamChat(
-  token: string,
   message: string,
   conversationId: number | null,
 ): AsyncGenerator<StreamEvent> {
@@ -83,10 +104,8 @@ export async function* streamChat(
   try {
     res = await fetch(`${API_URL}/chat/stream`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, conversation_id: conversationId }),
     });
   } catch {
@@ -164,15 +183,13 @@ export interface ConversationDetail {
   messages: MessageItem[];
 }
 
-// Helper para peticiones JSON autenticadas (GET/DELETE). El 401 lo traduce a
-// ApiError para que el llamador vuelva al login; el resto a un error legible.
-async function authed<T>(token: string, path: string, init?: RequestInit): Promise<T> {
+// Helper para peticiones JSON autenticadas (la cookie de sesión va sola). El 401
+// lo traduce a ApiError para que el llamador vuelva al login; el resto a un
+// error legible.
+async function authed<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers: { ...(init?.headers ?? {}), Authorization: `Bearer ${token}` },
-    });
+    res = await fetch(`${API_URL}${path}`, { ...init, credentials: "include" });
   } catch {
     throw networkError();
   }
@@ -194,25 +211,22 @@ async function authed<T>(token: string, path: string, init?: RequestInit): Promi
 }
 
 export function listConversations(
-  token: string,
   limit = 100,
   offset = 0,
 ): Promise<ConversationListResponse> {
-  return authed(token, `/conversations?limit=${limit}&offset=${offset}`);
+  return authed(`/conversations?limit=${limit}&offset=${offset}`);
 }
 
 export function getConversation(
-  token: string,
   id: number,
 ): Promise<ConversationDetail> {
-  return authed(token, `/conversations/${id}`);
+  return authed(`/conversations/${id}`);
 }
 
 export function deleteConversation(
-  token: string,
   id: number,
 ): Promise<{ deleted: boolean; conversation_id: number }> {
-  return authed(token, `/conversations/${id}`, { method: "DELETE" });
+  return authed(`/conversations/${id}`, { method: "DELETE" });
 }
 
 // --- OAuth de Google (conexión copiar-pegar loopback) -----------------------
@@ -238,19 +252,18 @@ export function needsGoogleReconnect(status: GoogleStatus | null): boolean {
   );
 }
 
-export function getGoogleStatus(token: string): Promise<GoogleStatus> {
-  return authed(token, "/oauth/google/status");
+export function getGoogleStatus(): Promise<GoogleStatus> {
+  return authed("/oauth/google/status");
 }
 
-export function startGoogleAuth(token: string): Promise<{ auth_url: string }> {
-  return authed(token, "/oauth/google/start");
+export function startGoogleAuth(): Promise<{ auth_url: string }> {
+  return authed("/oauth/google/start");
 }
 
 export function connectGoogle(
-  token: string,
   code: string,
 ): Promise<{ connected: boolean; scope?: string; refresh_token_received?: boolean }> {
-  return authed(token, "/oauth/google/callback", {
+  return authed("/oauth/google/callback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code }),
@@ -268,29 +281,27 @@ export interface DocumentItem {
   created_at: string;
 }
 
-export function listDocuments(token: string): Promise<DocumentItem[]> {
-  return authed(token, "/documents");
+export function listDocuments(): Promise<DocumentItem[]> {
+  return authed("/documents");
 }
 
 export function uploadDocument(
-  token: string,
   file: File,
 ): Promise<{ document_id: number; filename: string; status: string }> {
   const form = new FormData();
   form.append("file", file);
   // Sin Content-Type a mano: el navegador pone el multipart/form-data con boundary.
-  return authed(token, "/documents/upload", { method: "POST", body: form });
+  return authed("/documents/upload", { method: "POST", body: form });
 }
 
 export function deleteDocument(
-  token: string,
   id: number,
 ): Promise<{ deleted: boolean; document_id: number }> {
-  return authed(token, `/documents/${id}`, { method: "DELETE" });
+  return authed(`/documents/${id}`, { method: "DELETE" });
 }
 
 // --- TTS (lectura por voz, bajo demanda) -----------------------------------
-// POST /tts {text, voice} (Bearer) -> audio/wav (blob). El backend es un proxy
+// POST /tts {text, voice} -> audio/wav (blob). El backend es un proxy
 // autenticado al servicio XTTS-v2; si está caído responde 503 y aquí lanzamos
 // ApiError con el detalle, para que la UI muestre un error claro sin romper el chat.
 export type Voice = "ana" | "alma";
@@ -301,7 +312,6 @@ export const VOICES: { id: Voice; label: string }[] = [
 ];
 
 export async function synthesize(
-  token: string,
   text: string,
   voice: Voice,
 ): Promise<Blob> {
@@ -309,10 +319,8 @@ export async function synthesize(
   try {
     res = await fetch(`${API_URL}/tts`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice }),
     });
   } catch {

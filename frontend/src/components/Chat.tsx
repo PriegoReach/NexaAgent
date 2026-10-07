@@ -1,10 +1,32 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
+import Markdown from "react-markdown";
+import type { Components } from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import { ApiError, getConversation, streamChat, synthesize, VOICES } from "../api";
 import type { MessageItem, Voice } from "../api";
 
+// Las respuestas del agente se muestran como Markdown (negritas, listas, código,
+// tablas). react-markdown no interpreta HTML: el texto del modelo no puede meter
+// marcado en la página. remark-breaks respeta los saltos de línea simples.
+const MD_PLUGINS = [remarkGfm, remarkBreaks];
+const MD_COMPONENTS: Components = {
+  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+};
+
+// Texto para leer en voz alta: sin la sintaxis de Markdown (asteriscos, #, `…`),
+// que la voz leería tal cual.
+function speakable(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")            // bloques de código: no se leen
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")  // enlaces e imágenes: solo su texto
+    .replace(/[*_`#>~|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 interface ChatProps {
-  token: string;
   // Conversación a abrir al montar (null = conversación nueva). El padre fuerza
   // un remontaje (key) al cambiarla, así que "montar" equivale a "abrir esta".
   conversationId: number | null;
@@ -148,7 +170,7 @@ function endTool(parts: AgentPart[], tool: string): AgentPart[] {
 // expuestos por id de mensaje para que cada fila pinte el suyo.
 type SpeakStatus = "loading" | "playing";
 
-function useSpeech(token: string, voice: Voice, onSessionExpired: () => void) {
+function useSpeech(voice: Voice, onSessionExpired: () => void) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
   const activeRef = useRef<string | null>(null); // guarda contra respuestas tardías
@@ -189,7 +211,7 @@ function useSpeech(token: string, voice: Voice, onSessionExpired: () => void) {
       setSpeakingId(id);
       setStatus("loading");
       try {
-        const blob = await synthesize(token, text, voice);
+        const blob = await synthesize(text, voice);
         if (activeRef.current !== id) return; // se canceló/cambió mientras generaba
         const url = URL.createObjectURL(blob);
         urlRef.current = url;
@@ -214,7 +236,7 @@ function useSpeech(token: string, voice: Voice, onSessionExpired: () => void) {
         }
       }
     },
-    [token, voice, stop, teardown, onSessionExpired],
+    [voice, stop, teardown, onSessionExpired],
   );
 
   // Cambiar de voz detiene lo que esté sonando (la próxima lectura usa la nueva).
@@ -229,7 +251,6 @@ function useSpeech(token: string, voice: Voice, onSessionExpired: () => void) {
 }
 
 export function Chat({
-  token,
   conversationId,
   voice,
   onVoiceChange,
@@ -245,7 +266,7 @@ export function Chat({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
 
-  const speech = useSpeech(token, voice, onSessionExpired);
+  const speech = useSpeech(voice, onSessionExpired);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -257,7 +278,7 @@ export function Chat({
     let cancelled = false;
     (async () => {
       try {
-        const detail = await getConversation(token, conversationId);
+        const detail = await getConversation(conversationId);
         if (cancelled) return;
         setTitle(detail.title);
         setMessages(detail.messages.map(fromHistory));
@@ -279,7 +300,7 @@ export function Chat({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, token, onSessionExpired]);
+  }, [conversationId, onSessionExpired]);
 
   useLayoutEffect(() => {
     if (atBottomRef.current && scrollRef.current) {
@@ -337,7 +358,7 @@ export function Chat({
 
       let turnConvId = convId;
       try {
-        for await (const ev of streamChat(token, text, convId)) {
+        for await (const ev of streamChat(text, convId)) {
           switch (ev.type) {
             case "meta":
               turnConvId = ev.conversation_id;
@@ -382,7 +403,7 @@ export function Chat({
         if (turnConvId !== null) onConversationActivity(turnConvId);
       }
     },
-    [token, convId, sending, updateAgent, onSessionExpired, onConversationActivity],
+    [convId, sending, updateAgent, onSessionExpired, onConversationActivity],
   );
 
   function handleFormSubmit(e?: FormEvent) {
@@ -529,11 +550,12 @@ function AgentRow({
 
   // Texto leíble = solo las partes de texto (sin pasos de herramienta). El botón
   // de leer aparece cuando el turno terminó y hay texto, no durante el streaming.
-  const speakText = message.parts
-    .filter((p): p is TextPart => p.kind === "text")
-    .map((p) => p.text)
-    .join(" ")
-    .trim();
+  const speakText = speakable(
+    message.parts
+      .filter((p): p is TextPart => p.kind === "text")
+      .map((p) => p.text)
+      .join(" "),
+  );
   const canSpeak = !message.streaming && !message.error && speakText.length > 0;
 
   return (
@@ -547,13 +569,27 @@ function AgentRow({
           return <ToolStep key={part.id} part={part} />;
         }
         const isLastText = i === lastTextIndex;
+        const caret = isLastText && message.streaming && !message.error && (
+          <span className="caret" aria-hidden="true" />
+        );
+        // Una propuesta (p. ej. el correo que se va a enviar) va LITERAL: lo que se
+        // ve tiene que ser exactamente lo que se ejecutará; un "*hola*" del cuerpo
+        // no puede verse en cursiva.
+        if (message.proposal) {
+          return (
+            <p className="msg__body" key={`t${i}`}>
+              {part.text}
+              {caret}
+            </p>
+          );
+        }
         return (
-          <p className="msg__body" key={`t${i}`}>
-            {part.text}
-            {isLastText && message.streaming && !message.error && (
-              <span className="caret" aria-hidden="true" />
-            )}
-          </p>
+          <div className="msg__body msg__md" key={`t${i}`}>
+            <Markdown remarkPlugins={MD_PLUGINS} components={MD_COMPONENTS}>
+              {part.text}
+            </Markdown>
+            {caret}
+          </div>
         );
       })}
 
