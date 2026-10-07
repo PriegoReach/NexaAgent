@@ -1,6 +1,7 @@
 # CI de NexaAgent: en cada pull request y en cada push a main.
 #   - backend:  ruff (solo errores reales, no estilo) + la suite de pytest contra un
-#               Postgres con pgvector. Sin Ollama, Redis ni GPU: los tests no los usan.
+#               Postgres con pgvector, con tesseract para los tests de OCR. Sin Ollama,
+#               Redis ni GPU: los tests no los usan.
 #   - frontend: npm ci + build de producción (tsc -b && vite build).
 #   - compose:  docker-compose.yml y el override de CPU son válidos.
 name: CI
@@ -51,6 +52,11 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: nexaagent/pyproject.toml
+
+      - name: OCR (tesseract y poppler, como en la imagen de Docker)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-spa poppler-utils
 
       - name: Instalar dependencias
         run: |
