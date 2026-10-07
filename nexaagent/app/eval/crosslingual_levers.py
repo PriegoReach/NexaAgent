@@ -17,7 +17,6 @@ No toca producción. Reranquea SIEMPRE con la query española original.
 """
 import asyncio
 import json
-import sys
 from pathlib import Path
 
 import httpx

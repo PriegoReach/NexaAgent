@@ -8,13 +8,12 @@ from app.core.logging_config import setup_logging
 from app.api.request_context import RequestIDMiddleware
 from app.api import auth, chat, conversations, documents, health, metrics, oauth, tts
 from app.core.config import settings
-from app.db.session import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # El esquema lo gestiona Alembic (alembic upgrade head).
-    # init_db() queda como helper manual en session.py, ya no corre al arrancar.
+    # El esquema lo gestiona Alembic (servicio migrate: alembic upgrade head).
+    # init_db() queda como helper manual en app/db/session.py, ya no corre al arrancar.
     yield
 
 

@@ -1,6 +1,5 @@
 """Exception handlers: traducen fallos de infraestructura a respuestas HTTP limpias."""
 import logging
-import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse
 

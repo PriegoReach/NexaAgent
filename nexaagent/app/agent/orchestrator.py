@@ -5,7 +5,7 @@ import unicodedata
 import httpx
 from kombu.exceptions import OperationalError
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_ollama import ChatOllama
 from sqlalchemy import text
 
