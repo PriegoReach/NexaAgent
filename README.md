@@ -20,7 +20,8 @@ Nexa/
 - **Chat con un agente tool-calling** sobre un LLM local (Ollama), con memoria de corto plazo (Redis) y de largo plazo (resúmenes recuperables vía pgvector).
 - **RAG híbrido**: documentos troceados, embebidos en pgvector, recuperados por búsqueda vectorial + full-text y reordenados con un **cross-encoder** (`bge-reranker-v2-m3`), en GPU si la hay.
 - **Acciones del agente** mediante herramientas: tareas, webhooks, e integraciones Google (Calendar, Gmail, Drive) vía OAuth.
-- **Confirmación humana e idempotencia**: enviar un correo, crear un evento en Calendar o borrar una tarea solo ocurre tras un "sí" explícito del usuario (antes se muestra qué se va a hacer; en un correo, destinatario, asunto y cuerpo completos). Además, el mismo correo, webhook, tarea o evento no se duplica aunque se reintente.
+- **Recordatorios**: cada día, a partir de la hora que elijas, un resumen de las tareas de hoy y las vencidas, por correo (Gmail) o por el webhook.
+- **Confirmación humana e idempotencia**: enviar un correo, crear, mover o borrar un evento en Calendar o borrar una tarea solo ocurre tras un "sí" explícito del usuario (antes se muestra qué se va a hacer; en un correo, destinatario, asunto y cuerpo completos). Además, el mismo correo, webhook, tarea o evento no se duplica aunque se reintente.
 - **API REST** documentada (OpenAPI/Swagger) con autenticación **JWT Bearer** y streaming SSE.
 - **Web UI** mínima (login + chat) que consume la API por HTTP/JSON.
 
@@ -32,8 +33,8 @@ Nexa/
 | `search_long_term_memory` | Recupera memorias de largo plazo del usuario |
 | `http_get` | Petición HTTP GET a una URL pública de un dominio que hayas escrito en la conversación |
 | `create_task` / `list_tasks` / `update_task` / `delete_task` | Gestión de tareas |
-| `call_webhook` | Dispara un webhook configurado |
-| `list_calendar_events` / `create_calendar_event` | Google Calendar |
+| `call_webhook` | Dispara un webhook configurado (un fallo definitivo se puede reintentar; uno dudoso no se repite) |
+| `list_calendar_events` / `create_calendar_event` / `update_calendar_event` / `delete_calendar_event` | Google Calendar: consultar (también un día concreto), crear (con invitados), mover y borrar |
 | `send_email` | Gmail |
 | `list_drive_files` / `ingest_drive_file` | Listar e ingerir documentos de Google Drive |
 
@@ -193,6 +194,15 @@ docker compose run --rm migrate
 ## Configuración
 
 Todo se configura por `.env` (modelos, zona horaria, CORS) y por archivos de secretos en `nexaagent/secrets/`. Los secretos se prefieren desde `/run/secrets/<nombre>` (montados por compose) y caen al valor de `.env` solo en desarrollo. Ver [`nexaagent/app/core/config.py`](nexaagent/app/core/config.py).
+
+**Recordatorios** (en `nexaagent/.env`):
+
+```bash
+REMINDER_EMAIL=tu@correo.com   # a quién llega el resumen diario; se envía por Gmail con la cuenta de Google conectada
+REMINDER_HOUR=8                # a partir de qué hora (local, la de CALENDAR_TIMEZONE)
+```
+
+El worker comprueba cada hora (Celery beat embebido, `--beat`) si hay tareas pendientes para hoy o vencidas y, a partir de esa hora, manda **un** resumen al día. Sin `REMINDER_EMAIL` usa el webhook; sin ninguno de los dos no manda nada y lo avisa en el log.
 
 Cambiar de modelo (en `nexaagent/.env`):
 
