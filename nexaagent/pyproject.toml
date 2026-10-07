@@ -55,7 +55,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
+# Fijas igual que las de arriba: la CI las instala desde aquí, y una mayor nueva de
+# pytest-asyncio puede cambiar cómo corren los tests async.
+dev = ["pytest==9.1.1", "pytest-asyncio==1.4.0", "ruff==0.16.10"]
 
 [tool.ruff]
 line-length = 100

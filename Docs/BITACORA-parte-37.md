@@ -8,7 +8,7 @@
 > tool correcta?), que destapó un fallo nuevo del 7B: escribir la llamada a una herramienta
 > como texto en vez de hacerla.
 
-**Estado al cierre de la Parte 37:** 22 de los 23 puntos cerrados y verificados; el que queda (la CI) está escrito y probado en local, pero GitHub no ejecuta los trabajos por un bloqueo de facturación de la cuenta (ticket de soporte abierto). Lo que el sistema gana: los bugs en los que **lo que se mostraba no correspondía a lo que pasaba** (un correo «enviado» que no salió, una propuesta sin nada pendiente, «Conectado» con el acceso caducado, «Procesando…» eterno, «mañana» un día tarde) están cerrados y con tests; una instalación nueva funciona al primer `docker compose up`, con o sin GPU; los puertos internos ya no están abiertos a la red y `http_get` no puede usarse para sacar datos; y hay funciones nuevas: recordatorios diarios, Calendar completo, sesión que sobrevive a recargar, Markdown, panel de memoria, Word e imágenes con OCR, citas de la fuente y una evaluación del enrutado. La suite tiene ahora 247 tests y tarda unos 30 segundos (llegó a tardar 8,5 minutos).
+**Estado al cierre de la Parte 37:** los 23 puntos cerrados. La CI está fusionada y probada en contenedores limpios, pero GitHub no ejecutará sus trabajos hasta que levante el bloqueo de facturación de la cuenta (ticket de soporte abierto). Lo que el sistema gana: los bugs en los que **lo que se mostraba no correspondía a lo que pasaba** (un correo «enviado» que no salió, una propuesta sin nada pendiente, «Conectado» con el acceso caducado, «Procesando…» eterno, «mañana» un día tarde) están cerrados y con tests; una instalación nueva funciona al primer `docker compose up`, con o sin GPU; los puertos internos ya no están abiertos a la red y `http_get` no puede usarse para sacar datos; y hay funciones nuevas: recordatorios diarios, Calendar completo, sesión que sobrevive a recargar, Markdown, panel de memoria, Word e imágenes con OCR, citas de la fuente y una evaluación del enrutado. La suite tiene ahora 248 tests y tarda unos 30 segundos (llegó a tardar 8,5 minutos).
 
 ---
 
@@ -27,7 +27,7 @@ El ciclo por punto, siempre el mismo: **rama → arreglo → tests → verificac
 | #10 | `fix/documentos-y-historial` | b5 documentos sin texto, b6 memoria al retomar una conversación |
 | #11 | `fix/http-get-y-cpu` | s2 límites de `http_get`, i3 funcionamiento sin GPU |
 | #12 | `fix/secretos-y-embeddings` | i2 secretos opcionales, i4 dimensión de embeddings |
-| #13 | `ci/github-actions` | q2 CI (abierto, bloqueado por GitHub) |
+| #13 | `ci/github-actions` | q2 CI (fusionada; GitHub no la ejecuta hasta desbloquear la cuenta) |
 | #14 | `feat/recordatorios-calendar-tests` | f1 recordatorios, f2 Calendar completo, q1 tests (y la suite 15× más rápida) |
 | — | `feat/cierre-pendientes` | f6 sesión y Markdown, f4 panel de memoria, f3 Word/OCR/citas, f5 evaluación del enrutado, q3 documentación |
 
@@ -118,7 +118,7 @@ Ninguna variante mejora de forma fiable: cada una arregla unos casos y rompe otr
 ## 6. Calidad
 
 - **q1 — Tests:** fechas y horas en lenguaje natural (`_resolve_due`, `_resolve_time`) y la heurística sí/no de las confirmaciones (ejecuta, cancela o, ante la duda, vuelve a preguntar sin ejecutar). Y una medición que cambió la suite: preparar cada test tardaba ~2,5 s y ejecutarlo casi nada. El culpable era `TRUNCATE`, que crea archivos nuevos en disco y los sincroniza (lento en Docker Desktop); con tablas casi vacías, `DELETE` es casi instantáneo. **De 8,5 minutos a 35 segundos.**
-- **q2 — CI:** un workflow de GitHub Actions (ruff + pytest con un servicio pgvector y torch de CPU; build del frontend; validación del compose), probado en contenedores limpios. GitHub no ejecuta los trabajos: «account is locked due to a billing issue», en una cuenta Free sin suscripciones. Ticket de soporte abierto; el PR #13 espera.
+- **q2 — CI:** un workflow de GitHub Actions (ruff + pytest con un servicio pgvector y torch de CPU; build del frontend; validación del compose), probado en contenedores limpios. GitHub no ejecuta los trabajos: «account is locked due to a billing issue», en una cuenta Free sin suscripciones. Ticket de soporte abierto. Se fusionó igualmente, tras simularla otra vez en contenedores limpios (ruff sin errores, 246 tests, build del frontend y compose) y con tesseract añadido para que los tests de OCR también corran allí: cuando GitHub levante el bloqueo, arranca sola.
 - **q3 — Documentación:** los tres README al día (el principal decía «Web UI mínima»; el del frontend listaba como pendiente lo que ya existía) y esta bitácora. El archivo `BITACORA-parte-34.md` se llamaba así pero era la «Parte 36»: renombrado a `BITACORA-parte-36.md`, sin tocar su contenido.
 
 ---
@@ -171,17 +171,17 @@ docker compose run --rm -e EVAL_REAL=1 tests pytest tests/test_tool_routing_eval
 
 ## 9. Estado y siguientes pasos
 
-### El checklist de la revisión: 22 de 23 ✅
+### El checklist de la revisión: 23 de 23 ✅
 
 - ✅ **Bugs (8/8):** correo, token de Google, dos acciones, fechas UTC, documentos sin texto, memoria al retomar, propuestas imitadas, Conexiones.
 - ✅ **Instalación (4/4):** migraciones, secretos, sin GPU, embeddings.
 - ✅ **Seguridad (2/2):** puertos, `http_get`.
 - ✅ **Funciones (6/6):** recordatorios, Calendar completo, Word/OCR/citas, panel de memoria, evaluación del enrutado, sesión y Markdown.
-- ✅ **Calidad (2/3):** tests, documentación. 🔜 CI: escrita, bloqueada por GitHub.
+- ✅ **Calidad (3/3):** tests, documentación y CI (fusionada; arranca cuando GitHub desbloquee la cuenta).
 
 ### Deudas / pendientes 🔜
 
-- **CI (PR #13):** relanzarla y fusionarla cuando GitHub desbloquee la cuenta.
+- **CI:** comprobar su primera ejecución en GitHub cuando se levante el bloqueo de facturación de la cuenta.
 - **El enrutado del 7B:** pregunta por el id en vez de listar primero; a veces llama con un id vacío. El eval ya permite comparar con datos el 14B (que no cabe bien en 12 GB con el reranker y la voz) o un modelo más nuevo: era la razón de construirlo.
 - **El eval mide la herramienta, no sus argumentos.** El siguiente paso es añadir al dataset los argumentos esperados (la fecha tal como la dijo el usuario, el destinatario del correo) y comprobarlos.
 - **El piso del eval de recuperación no se puede ejecutar como dice su docstring:** `docker compose exec -e EVAL_REAL=1 api pytest …`, pero la imagen de la API no tiene pytest, y el `conftest` fuerza la BD `_test`, que no tiene el corpus. El CLI `python -m app.eval.retrieval` sí funciona.
@@ -224,4 +224,4 @@ docker compose run --rm -e EVAL_REAL=1 tests pytest tests/test_tool_routing_eval
 
 ---
 
-*Cierre de la Parte 37. La revisión, cerrada: 22 de 23 puntos, verificados contra los servicios reales. NexaAgent hace lo que dice que hace, se instala a la primera, y ahora mide también si elige bien sus herramientas.*
+*Cierre de la Parte 37. La revisión, cerrada: los 23 puntos, verificados contra los servicios reales. NexaAgent hace lo que dice que hace, se instala a la primera, y ahora mide también si elige bien sus herramientas.*

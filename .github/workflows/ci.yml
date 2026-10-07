@@ -1,0 +1,110 @@
+# CI de NexaAgent: en cada pull request y en cada push a main.
+#   - backend:  ruff (solo errores reales, no estilo) + la suite de pytest contra un
+#               Postgres con pgvector, con tesseract para los tests de OCR. Sin Ollama,
+#               Redis ni GPU: los tests no los usan.
+#   - frontend: npm ci + build de producción (tsc -b && vite build).
+#   - compose:  docker-compose.yml y el override de CPU son válidos.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Un push nuevo a la misma rama cancela la ejecución anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (ruff + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nexaagent
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: nexa
+          POSTGRES_PASSWORD: nexa
+          POSTGRES_DB: nexaagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexa -d nexaagent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # conftest añade "_test" al nombre y crea esa base; nunca toca "nexaagent".
+      DATABASE_URL: postgresql+asyncpg://nexa:nexa@localhost:5432/nexaagent
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: nexaagent/pyproject.toml
+
+      - name: OCR (tesseract y poppler, como en la imagen de Docker)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-spa poppler-utils
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          # torch para CPU: los tests no usan GPU y la build de PyPI arrastra CUDA
+          # (varios GB). pyproject fija torch==2.5.1, que también acepta 2.5.1+cpu.
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          # Solo las dependencias de pyproject.toml (más las de dev): el proyecto no se
+          # instala como paquete, los tests importan app/ desde el checkout.
+          python -c "import tomllib; p = tomllib.load(open('pyproject.toml', 'rb'))['project']; print('\n'.join(p['dependencies'] + p['optional-dependencies']['dev']))" > "$RUNNER_TEMP/requirements-ci.txt"
+          pip install -r "$RUNNER_TEMP/requirements-ci.txt"
+
+      - name: Ruff (errores, no estilo)
+        run: ruff check --select F,E9 app alembic scripts tests
+
+      - name: Tests
+        run: pytest -q -p no:cacheprovider
+
+  frontend:
+    name: Frontend (tsc + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  compose:
+    name: Docker Compose (config)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nexaagent
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar docker-compose.yml y el override de CPU
+        run: |
+          # compose exige el env_file; para validar no hacen falta los secretos.
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.cpu.yml config --quiet

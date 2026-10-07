@@ -1,5 +1,7 @@
 # NexaAgent
 
+[![CI](https://github.com/PriegoReach/NexaAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/PriegoReach/NexaAgent/actions/workflows/ci.yml)
+
 Asistente de IA personal full-stack con **memoria, herramientas y RAG**, que corre **100 % en local** con Ollama, sin depender de APIs de LLM de pago. Responde preguntas sobre tus documentos y ejecuta acciones reales en Google Calendar, Gmail y Drive.
 
 Este repositorio es un monorepo con el backend, el frontend y la bitácora de desarrollo:
@@ -179,6 +181,8 @@ Suite de pytest en un servicio efímero con su propia BD (`nexaagent_test`), sin
 cd nexaagent
 docker compose run --rm tests
 ```
+
+La **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) corre en cada pull request y en cada push a `main`: la misma suite contra un Postgres con pgvector (con torch para CPU y tesseract para los tests de OCR; no hace falta GPU ni Ollama), `ruff` para errores de código, la build del frontend y la validación de `docker-compose.yml` y del override de CPU.
 
 Las **evaluaciones** miden lo que la suite no puede, porque dependen del modelo. Necesitan Ollama levantado:
 
