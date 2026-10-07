@@ -17,5 +17,10 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def local_now() -> datetime:
+    """La hora actual en la zona del usuario (con la zona puesta)."""
+    return _utcnow().astimezone(ZoneInfo(settings.calendar_timezone))
+
+
 def local_today() -> date:
-    return _utcnow().astimezone(ZoneInfo(settings.calendar_timezone)).date()
+    return local_now().date()

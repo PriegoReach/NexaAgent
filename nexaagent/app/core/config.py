@@ -95,6 +95,14 @@ class Settings(BaseSettings):
     # de la red interna de compose. Override por env si cambia host/puerto.
     tts_base_url: str = "http://tts:8000"
 
+    # --- Recordatorios (resumen diario de tareas) -------------------------
+    # Correo al que se manda cada día el resumen de las tareas de hoy y las
+    # vencidas, por Gmail con la cuenta de Google conectada. Vacío: se usa el
+    # webhook si lo hay; sin ninguno de los dos, no se manda nada.
+    reminder_email: str = ""
+    # Hora local (0-23, en calendar_timezone) a partir de la cual se manda.
+    reminder_hour: int = 8
+
     # --- http_get --------------------------------------------------------
     # Dominios que la tool http_get puede consultar SIEMPRE (incluye subdominios),
     # además de los que el usuario escribe en la conversación. Lista JSON por env:

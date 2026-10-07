@@ -36,6 +36,7 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from email.message import EmailMessage
+from typing import NamedTuple
 
 import httpx
 from langchain_core.tools import tool
@@ -130,8 +131,16 @@ async def _register(key: str, to: str, subject: str) -> int | None:
     return row[0] if row is not None else None
 
 
-async def _not_resent_message(key: str) -> str:
-    """Respuesta cuando la clave ya existe y no se puede reclamar. Depende de lo que
+class SendResult(NamedTuple):
+    """Cómo terminó un envío: 'sent' (salió, ahora o en un intento anterior),
+    'failed' (seguro que no salió; se puede reintentar) o 'uncertain' (pudo salir;
+    no se reintenta). `message` es el texto para el usuario."""
+    status: str
+    message: str
+
+
+async def _not_resent(key: str) -> SendResult:
+    """Resultado cuando la clave ya existe y no se puede reclamar. Depende de lo que
     consta: un correo solo se da por enviado si está como 'sent'."""
     async with worker_session() as session:
         result = await session.execute(
@@ -141,13 +150,13 @@ async def _not_resent_message(key: str) -> str:
         status = result.scalar_one_or_none()
     logger.info("send_email not resent", extra={"idempotency_key": key, "status": status})
     if status == "sent":
-        return "Ese correo ya se había enviado (no lo reenvié)."
+        return SendResult("sent", "Ese correo ya se había enviado (no lo reenvié).")
     # 'pending' o 'uncertain': un intento anterior quedó a medias y pudo salir.
-    return (
+    return SendResult("uncertain", (
         "Un intento anterior de este mismo correo no terminó bien y no sé si llegó a "
         "salir, así que no lo reenvié para no duplicarlo. Revisa tu carpeta de Enviados "
         "en Gmail y, si no está, envíalo desde ahí."
-    )
+    ))
 
 
 @confirmable_action("send_email")
@@ -155,20 +164,25 @@ async def perform_send_email(args: dict) -> str:
     """El ENVÍO REAL del correo. Ejecutor confirmable: firma (args: dict) -> str.
     NO lo llama el modelo: lo invoca la rama de confirmación del orquestador tras un
     "sí". `args` trae {to, subject, body}.
+    """
+    result = await send_email_now(args["to"], args.get("subject", ""), args.get("body", ""))
+    return result.message
+
+
+async def send_email_now(to: str, subject: str, body: str) -> SendResult:
+    """Envía YA, sin pedir confirmación: la usan el envío confirmado y los
+    recordatorios (que van al propio usuario y los redacta el código, no el modelo).
 
     Registra el intento antes de enviar y deja en sent_emails el resultado real ya
     clasificado (ver docstring del módulo): solo un fallo DEFINITIVO libera el mismo
     correo para reintentarlo.
     """
-    to = args["to"]
-    subject = args.get("subject", "")
-    body = args.get("body", "")
     key = _idempotency_key(to, subject, body)
 
     # PASO 1: registrar ANTES de enviar. None = la clave existe y no es reclamable.
     email_id = await _register(key, to, subject)
     if email_id is None:
-        return await _not_resent_message(key)
+        return await _not_resent(key)
 
     # PASO 2: token y mensaje (fuera de la sesión; el registro ya está commiteado).
     # Un fallo aquí ocurre ANTES de que la petición salga: seguro que no se envió.
@@ -177,11 +191,11 @@ async def perform_send_email(args: dict) -> str:
         raw = _build_mime(to, subject, body)
     except GoogleTokenUnavailable as exc:
         await _mark_status(email_id, "failed")
-        return f"El correo no se envió. {exc}"
+        return SendResult("failed", f"El correo no se envió. {exc}")
     except Exception:
         logger.exception("gmail message build failed", extra={"email_id": email_id})
         await _mark_status(email_id, "failed")
-        return "No pude preparar el correo (error interno); no se envió."
+        return SendResult("failed", "No pude preparar el correo (error interno); no se envió.")
 
     # PASO 3: enviar. La clase del fallo decide si el mismo correo se puede reintentar.
     headers = {"Authorization": f"Bearer {token}"}
@@ -195,30 +209,32 @@ async def perform_send_email(args: dict) -> str:
         if code >= 500:
             # Error interno de Google: pudo procesarlo antes de fallar.
             await _mark_status(email_id, "uncertain")
-            return _UNCERTAIN_MSG
+            return SendResult("uncertain", _UNCERTAIN_MSG)
         # 4xx: Gmail rechazó la petición, el correo no salió.
         await _mark_status(email_id, "failed")
         if code in (401, 403):
-            return ("Google rechazó el envío (token o permisos de Gmail); el correo no "
-                    "se envió. Reconecta la cuenta y vuelve a pedírmelo.")
-        return f"Gmail rechazó el correo (error {code}); no se envió."
+            return SendResult("failed", (
+                "Google rechazó el envío (token o permisos de Gmail); el correo no "
+                "se envió. Reconecta la cuenta y vuelve a pedírmelo."))
+        return SendResult("failed", f"Gmail rechazó el correo (error {code}); no se envió.")
     except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         # La conexión ni se abrió: la petición no llegó a salir.
         await _mark_status(email_id, "failed")
         logger.warning("gmail unreachable", extra={"email_id": email_id, "exc": str(exc)})
-        return ("No pude contactar a Gmail (problema de red); el correo no se envió. "
-                "Vuelve a pedírmelo en un momento.")
+        return SendResult("failed", (
+            "No pude contactar a Gmail (problema de red); el correo no se envió. "
+            "Vuelve a pedírmelo en un momento."))
     except httpx.HTTPError as exc:
         # La petición pudo salir y perderse la respuesta (p. ej. timeout de lectura).
         await _mark_status(email_id, "uncertain")
         logger.warning("gmail send outcome unknown",
                        extra={"email_id": email_id, "exc": str(exc)})
-        return _UNCERTAIN_MSG
+        return SendResult("uncertain", _UNCERTAIN_MSG)
 
     # PASO 4: registrar el resultado real.
     await _mark_status(email_id, "sent")
     logger.info("send_email executed", extra={"email_id": email_id, "idempotency_key": key})
-    return f"Correo enviado a {to} (asunto: '{subject}')."
+    return SendResult("sent", f"Correo enviado a {to} (asunto: '{subject}').")
 
 
 async def _mark_status(email_id: int, status: str) -> None:

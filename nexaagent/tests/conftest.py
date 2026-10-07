@@ -7,10 +7,10 @@ Decisiones de diseño (cerradas antes de escribir nada):
     el SQL específico de Postgres.
   - **Migrada con Alembic** (las mismas migraciones que producción) → el esquema
     de test es exactamente el de producción, no una recreación paralela.
-  - **Aislamiento por TRUNCATE** antes de cada test (no rollback): los endpoints
-    abren su propia sesión con `SessionLocal()` y hacen `commit()`, así que una
-    transacción externa no los envolvería. Truncar prueba el commit y el cascade
-    REALES, que es justo lo que queremos cubrir.
+  - **Aislamiento vaciando las tablas** antes de cada test (no rollback): los
+    endpoints abren su propia sesión con `SessionLocal()` y hacen `commit()`, así
+    que una transacción externa no los envolvería. Vaciar prueba el commit y el
+    cascade REALES, que es justo lo que queremos cubrir.
   - **Higiene de event loop**: se dispone el engine global tras cada test para
     que el pool no reutilice una conexión entre loops distintos (el clásico
     "Future attached to a different loop" de la Parte 2; pytest-asyncio crea un
@@ -53,11 +53,11 @@ os.environ.setdefault(
 # depender del directorio desde el que se lance pytest.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Tablas a vaciar entre tests. TRUNCATE ... CASCADE arrastra dependientes, pero
-# las listamos todas explícitamente para que el reset de identidades sea total.
+# Tablas a vaciar entre tests, las hijas antes que sus padres (FKs). Todas
+# explícitas para que el reinicio de los contadores de id sea total.
 TABLES = [
-    "conversations", "messages", "documents", "document_chunks", "long_term_memories",
-    "sent_emails", "tasks", "oauth_accounts",
+    "messages", "long_term_memories", "conversations", "document_chunks", "documents",
+    "sent_emails", "tasks", "oauth_accounts", "webhook_events", "reminder_digests",
 ]
 
 
@@ -111,11 +111,28 @@ async def _clean_db(_db_setup):
 
     from app.db.session import engine
 
-    # Salvaguarda dura: jamás truncar una base que no termine en _test.
+    # Salvaguarda dura: jamás vaciar una base que no termine en _test.
     assert engine.url.database.endswith("_test"), f"BD inesperada: {engine.url.database}"
 
+    # DELETE y no TRUNCATE: con tablas casi vacías es casi instantáneo, mientras que
+    # TRUNCATE crea archivos nuevos en disco y los sincroniza (medido: ~2,5 s por test
+    # en Docker Desktop, casi todo el tiempo de la suite). Las tablas hijas van antes
+    # que sus padres por las FKs. Los contadores de id se reinician como hacía
+    # RESTART IDENTITY.
     async with engine.begin() as conn:
-        await conn.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
+        for table in TABLES:
+            await conn.execute(text(f"DELETE FROM {table}"))
+        # Las secuencias que pertenecen a esas tablas (las de sus columnas SERIAL);
+        # reminder_digests no tiene, su clave es la fecha.
+        await conn.execute(
+            text(
+                "SELECT setval(seq.oid::regclass, 1, false) FROM pg_class seq "
+                "JOIN pg_depend dep ON dep.objid = seq.oid AND dep.deptype IN ('a', 'i') "
+                "JOIN pg_class tbl ON tbl.oid = dep.refobjid "
+                "WHERE seq.relkind = 'S' AND tbl.relname = ANY(CAST(:tables AS text[]))"
+            ),
+            {"tables": TABLES},
+        )
     yield
     await engine.dispose()
 

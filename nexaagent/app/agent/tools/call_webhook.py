@@ -32,15 +32,20 @@ def _event_key(message: str) -> str:
 
 
 async def _register_and_send(message: str, url: str) -> str:
+    """Registra la notificación y la dispara. Devuelve 'sent', 'failed' (seguro que
+    no salió: el mismo mensaje se puede reintentar), 'uncertain' (pudo llegar: no se
+    reintenta) o 'DUPLICATE' (ya se había enviado). La misma clasificación que el
+    correo: antes, un fallo bloqueaba el reintento y se daba por enviado."""
     key = _event_key(message)
     async with worker_session() as session:
-        # PASO 1: registrar ANTES de disparar (sesgo a no-duplicar).
-        # Si la clave ya existe -> ON CONFLICT DO NOTHING -> row None -> replay, no redisparar.
+        # PASO 1: registrar ANTES de disparar (sesgo a no-duplicar). Si la clave ya
+        # existe solo se reclama un intento que falló SIN salir ('failed').
         result = await session.execute(
             text(
                 "INSERT INTO webhook_events (idempotency_key, message, status) "
                 "VALUES (:key, :msg, 'pending') "
-                "ON CONFLICT (idempotency_key) DO NOTHING "
+                "ON CONFLICT (idempotency_key) DO UPDATE SET status = 'pending' "
+                "WHERE webhook_events.status = 'failed' "
                 "RETURNING id"
             ),
             {"key": key, "msg": message},
@@ -48,8 +53,12 @@ async def _register_and_send(message: str, url: str) -> str:
         row = result.first()
         await session.commit()
         if row is None:
-            logger.info("call_webhook duplicate ignored", extra={"idempotency_key": key})
-            return "DUPLICATE"
+            existing = (await session.execute(
+                text("SELECT status FROM webhook_events WHERE idempotency_key = :key"),
+                {"key": key},
+            )).scalar_one_or_none()
+            logger.info("call_webhook not resent", extra={"idempotency_key": key, "status": existing})
+            return "DUPLICATE" if existing == "sent" else "uncertain"
         event_id = row[0]
 
     # PASO 2: disparar el POST (fuera de la sesión; el registro ya está commiteado).
@@ -57,9 +66,17 @@ async def _register_and_send(message: str, url: str) -> str:
         resp = httpx.post(url, json={"message": message}, timeout=15)
         resp.raise_for_status()
         final_status = "sent"
-    except httpx.HTTPError as exc:
-        final_status = "failed"
+    except httpx.HTTPStatusError as exc:
+        # 4xx: el receptor la rechazó, no se procesó. 5xx: pudo procesarla.
+        final_status = "uncertain" if exc.response.status_code >= 500 else "failed"
         logger.warning("call_webhook POST failed",
+                       extra={"event_id": event_id, "status": exc.response.status_code})
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        final_status = "failed"   # la conexión ni se abrió: no salió
+        logger.warning("call_webhook unreachable", extra={"event_id": event_id, "exc": str(exc)})
+    except httpx.HTTPError as exc:
+        final_status = "uncertain"   # pudo salir y perderse la respuesta
+        logger.warning("call_webhook outcome unknown",
                        extra={"event_id": event_id, "exc": str(exc)})
 
     # PASO 3: registrar el resultado real del POST.
@@ -91,4 +108,8 @@ def call_webhook(message: str) -> str:
         return "Esa notificación ya se había enviado (no se reenvió)."
     if result == "sent":
         return "Notificación enviada."
-    return "La notificación no se pudo entregar (el webhook falló); registrada como fallida."
+    if result == "uncertain":
+        return ("No sé si la notificación llegó (el webhook no respondió bien); para no "
+                "duplicarla, no la reintento.")
+    return ("La notificación no se pudo entregar (el webhook falló); se puede volver a "
+            "pedir.")

@@ -84,6 +84,8 @@ const TOOL_LABELS: Record<string, string> = {
   call_webhook: "Enviando una notificación",
   list_calendar_events: "Consultando tu calendario",
   create_calendar_event: "Preparando un evento",
+  update_calendar_event: "Preparando un cambio en el calendario",
+  delete_calendar_event: "Preparando el borrado de un evento",
   send_email: "Preparando un correo",
   list_drive_files: "Buscando en Google Drive",
   ingest_drive_file: "Ingiriendo un documento de Drive",
@@ -98,6 +100,8 @@ interface ProposalMeta {
 const PROPOSAL_META: Record<string, ProposalMeta> = {
   send_email: { title: "Confirmar envío de correo", confirmLabel: "Sí, enviar", danger: false, Icon: MailIcon },
   create_calendar_event: { title: "Confirmar evento", confirmLabel: "Sí, crear", danger: false, Icon: CalendarIcon },
+  update_calendar_event: { title: "Confirmar cambio de evento", confirmLabel: "Sí, cambiar", danger: false, Icon: CalendarIcon },
+  delete_calendar_event: { title: "Confirmar borrado de evento", confirmLabel: "Sí, borrar", danger: true, Icon: TrashIcon },
   delete_task: { title: "Confirmar eliminación", confirmLabel: "Sí, eliminar", danger: true, Icon: TrashIcon },
 };
 const DEFAULT_PROPOSAL_META: ProposalMeta = {

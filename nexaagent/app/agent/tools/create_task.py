@@ -58,8 +58,14 @@ def _resolve_due(phrase: str, today: date) -> Optional[date]:
             return today + timedelta(days=ahead or 7)     # nunca hoy -> próximo
     m = re.search(r"(\d{1,2})\s+de\s+([a-zñ]+)", s)       # 'D de Mes'
     if m and (mon := _MONTH_IDX.get(_strip(m.group(2)))):
-        cand = date(today.year, mon, int(m.group(1)))
-        return cand if cand >= today else date(today.year + 1, mon, int(m.group(1)))
+        day = int(m.group(1))
+        try:
+            cand = date(today.year, mon, day)
+            return cand if cand >= today else date(today.year + 1, mon, day)
+        except ValueError:
+            # "31 de febrero", o "29 de febrero" en un año que no es bisiesto: no
+            # existe. Como un ISO inválido, None ("no la entendí"), no una excepción.
+            return None
     return None
 
 
