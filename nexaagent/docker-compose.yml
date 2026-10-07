@@ -70,13 +70,15 @@ services:
       - "127.0.0.1:6379:6379"   # solo este equipo (ver ollama)
 
   # Aplica las migraciones de Alembic y termina; api y worker esperan a que acabe
-  # bien. En una instalación nueva crea el esquema; en una al día no hace nada. Mismo
-  # patrón de un solo uso que init-ollama. Usa la MISMA imagen que api (mismo
-  # Dockerfile): sin el `image:` compartido, compose construiría una copia de ~10 GB.
+  # bien. En una instalación nueva crea el esquema; en una al día no hace nada. Luego
+  # comprueba que la dimensión de los vectores coincide con EMBEDDING_DIM
+  # (app/db/schema_check.py). Mismo patrón de un solo uso que init-ollama. Usa la
+  # MISMA imagen que api (mismo Dockerfile): sin el `image:` compartido, compose
+  # construiría una copia de ~10 GB.
   migrate:
     build: .
     image: nexaagent-api
-    command: alembic upgrade head
+    command: ["sh", "-c", "alembic upgrade head && python -m app.db.schema_check"]
     env_file: .env
     depends_on:
       db:
@@ -211,6 +213,7 @@ services:
       - ./app:/app/app
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
+      - ./scripts:/app/scripts
       - ./tests:/app/tests
       - ./pyproject.toml:/app/pyproject.toml
     command: ["pytest", "-q"]

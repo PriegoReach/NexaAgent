@@ -1,18 +1,44 @@
+import logging
 import os
 from functools import lru_cache
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logger = logging.getLogger("nexa.config")
 
-def _read_secret_file(env_value: str, secret_name: str) -> str:
+# Donde Docker monta los secretos (secrets: del compose). Aparte para los tests.
+_SECRETS_DIR = "/run/secrets"
+
+
+class MissingSecret(RuntimeError):
+    """Falta un secreto obligatorio. El mensaje explica cómo crearlo."""
+
+
+def read_secret_file(env_value: str, secret_name: str, required: bool = False) -> str:
     """Prefiere /run/secrets/<secret_name> (Docker secret, montado como archivo)
-    sobre el valor de .env. Fallback al valor de .env si el archivo no existe
+    sobre el valor de .env. Fallback al valor de .env si no está montado
     (desarrollo local y tests siguen funcionando sin secrets montados).
     Patrón lado-archivo: el mismo que un vault usaría si despliegas multi-host.
+
+    Si el archivo del secreto no existe en el host, Docker NO falla: crea una
+    CARPETA vacía con ese nombre (también en secrets/ del host) y la monta aquí.
+    Un secreto opcional (Google, webhook) se trata entonces como no configurado; uno
+    obligatorio detiene el arranque con un mensaje claro, en vez de seguir con el
+    valor por defecto de .env, que cualquiera conoce.
     """
-    path = f"/run/secrets/{secret_name}"
-    if os.path.exists(path):
+    path = f"{_SECRETS_DIR}/{secret_name}"
+    if os.path.isdir(path):
+        hint = (
+            f"Falta el archivo secrets/{secret_name}.txt: Docker montó una carpeta vacía "
+            "en su lugar (y la creó en secrets/). Borra esa carpeta y ejecuta "
+            "python scripts/init_secrets.py desde nexaagent/."
+        )
+        if required:
+            raise MissingSecret(hint)
+        logger.warning("optional secret not configured. %s", hint)
+        return env_value
+    if os.path.isfile(path):
         with open(path, "r", encoding="utf-8") as f:
             return f.read().strip()
     return env_value
@@ -91,30 +117,32 @@ class Settings(BaseSettings):
     # Tras cargar de .env, prefiere el archivo de secreto montado si existe.
     # security.py NO cambia: sigue leyendo settings.jwt_secret/auth_password;
     # solo cambia de dónde se rellenan (la fuente es invisible al consumidor).
+    # jwt_secret, auth_password y postgres_password son obligatorios; los de Google,
+    # opcionales (vacíos = integración desactivada).
     @field_validator("jwt_secret", mode="after")
     @classmethod
     def _jwt_secret_from_file(cls, v: str) -> str:
-        return _read_secret_file(v, "jwt_secret")
+        return read_secret_file(v, "jwt_secret", required=True)
 
     @field_validator("auth_password", mode="after")
     @classmethod
     def _auth_password_from_file(cls, v: str) -> str:
-        return _read_secret_file(v, "auth_password")
+        return read_secret_file(v, "auth_password", required=True)
 
     @field_validator("db_password", mode="after")
     @classmethod
     def _db_password_from_file(cls, v: str) -> str:
-        return _read_secret_file(v, "postgres_password")
+        return read_secret_file(v, "postgres_password", required=True)
 
     @field_validator("google_client_id", mode="after")
     @classmethod
     def _google_client_id_from_file(cls, v: str) -> str:
-        return _read_secret_file(v, "google_client_id")
+        return read_secret_file(v, "google_client_id")
 
     @field_validator("google_client_secret", mode="after")
     @classmethod
     def _google_client_secret_from_file(cls, v: str) -> str:
-        return _read_secret_file(v, "google_client_secret")
+        return read_secret_file(v, "google_client_secret")
 
     @model_validator(mode="after")
     def _assemble_database_url(self) -> "Settings":
