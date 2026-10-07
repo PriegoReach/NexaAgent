@@ -13,6 +13,7 @@ import { Sidebar } from "./Sidebar";
 import { Chat } from "./Chat";
 import { ConnectionsModal } from "./ConnectionsModal";
 import { DocumentsModal } from "./DocumentsModal";
+import { MemoryModal } from "./MemoryModal";
 
 interface WorkspaceProps {
   onSignOut: () => void;
@@ -41,6 +42,7 @@ export function Workspace({ onSignOut, onSessionExpired }: WorkspaceProps) {
   const [googleStatus, setGoogleStatus] = useState<GoogleStatus | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   // Voz de lectura (TTS). Vive aquí, no en Chat, para que la elección persista
   // cuando el panel de chat se remonta al cambiar de conversación.
@@ -156,6 +158,7 @@ export function Workspace({ onSignOut, onSessionExpired }: WorkspaceProps) {
         onNew={newConversation}
         onDelete={handleDelete}
         onOpenDocuments={() => setDocumentsOpen(true)}
+        onOpenMemory={() => setMemoryOpen(true)}
         onOpenConnections={openConnections}
         onSignOut={onSignOut}
       />
@@ -183,6 +186,10 @@ export function Workspace({ onSignOut, onSessionExpired }: WorkspaceProps) {
           onClose={() => setDocumentsOpen(false)}
           onSessionExpired={onSessionExpired}
         />
+      )}
+
+      {memoryOpen && (
+        <MemoryModal onClose={() => setMemoryOpen(false)} onSessionExpired={onSessionExpired} />
       )}
     </div>
   );

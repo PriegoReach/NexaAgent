@@ -300,6 +300,31 @@ export function deleteDocument(
   return authed(`/documents/${id}`, { method: "DELETE" });
 }
 
+// --- Memoria de largo plazo -------------------------------------------------
+// Shapes verificados (app/api/memories.py):
+//   GET    /memories       -> {items: MemoryItem[], total}
+//   DELETE /memories/{id}  -> {deleted: 1}
+//   DELETE /memories       -> {deleted: n}   (olvida todo; las conversaciones quedan)
+export interface MemoryItem {
+  id: number;
+  content: string;
+  created_at: string;
+  conversation_id: number;
+  conversation_title: string | null;
+}
+
+export function listMemories(): Promise<{ items: MemoryItem[]; total: number }> {
+  return authed("/memories");
+}
+
+export function deleteMemory(id: number): Promise<{ deleted: number }> {
+  return authed(`/memories/${id}`, { method: "DELETE" });
+}
+
+export function deleteAllMemories(): Promise<{ deleted: number }> {
+  return authed("/memories", { method: "DELETE" });
+}
+
 // --- TTS (lectura por voz, bajo demanda) -----------------------------------
 // POST /tts {text, voice} -> audio/wav (blob). El backend es un proxy
 // autenticado al servicio XTTS-v2; si está caído responde 503 y aquí lanzamos
