@@ -7,14 +7,22 @@ FastAPI + PostgreSQL (pgvector) + Redis + Celery + **Ollama (local LLM)**.
 
 ## Architecture
 
-- **FastAPI** — async API layer (`/chat`, `/documents`, `/health`).
-- **Agent core (LangChain)** — a tool-calling agent over Ollama local models.
-  - **Memory** — short-term conversation history in Redis.
-  - **Tools** — knowledge-base search (RAG) and external HTTP requests.
-  - **RAG** — documents are chunked, embedded, and stored in pgvector.
-- **PostgreSQL + pgvector** — conversations, messages, documents and vectors.
-- **Redis** — cache, short-term memory, and Celery broker.
-- **Celery worker** — handles heavy document ingestion off the request path.
+- **FastAPI** — async API layer (`/auth`, `/chat`, `/documents`, `/conversations`,
+  `/memories`, `/oauth`, `/tts`, `/health`, `/metrics`).
+- **Agent core (LangChain/LangGraph)** — a tool-calling agent over Ollama local models.
+  - **Memory** — short-term history in Redis (rebuilt from Postgres when it expires) and
+    long-term facts extracted every few turns and recalled via pgvector.
+  - **Tools** — 15 of them: documents (RAG), long-term memory, tasks, Google Calendar,
+    Gmail and Drive, a webhook and HTTP GET. Irreversible actions (sending an email,
+    changing the calendar, deleting a task) only run after an explicit "yes".
+  - **RAG** — PDF (scanned ones via OCR), Word (.docx), PNG/JPEG images (OCR) and plain
+    text are chunked, embedded and stored in pgvector. Hybrid search (vector +
+    full-text, RRF) re-ranked by a cross-encoder; each fragment carries its source file
+    so the agent can cite it.
+- **PostgreSQL + pgvector** — conversations, messages, documents, vectors, tasks, OAuth accounts.
+- **Redis** — short-term memory, pending confirmations, and Celery broker.
+- **Celery worker** — document ingestion and memory extraction off the request path, plus
+  the daily reminder (embedded beat).
 - **Ollama** — local LLM inference: qwen2.5 7B (chat with tool-calling) + nomic-embed-text (embeddings).
 
 ## Quick start
@@ -41,7 +49,8 @@ API docs: http://localhost:8000/docs
 
 ## Try it
 
-Authentication is **JWT Bearer**: log in first, then send the token.
+Authentication is a **JWT**: log in first, then send it as `Authorization: Bearer <token>`.
+(`/auth/login` also sets an httpOnly session cookie; that is what the web UI uses.)
 
 ```bash
 # 1. Log in -> access_token (the password is the one in secrets/auth_password.txt)
@@ -55,7 +64,7 @@ curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Hello, what can you do?"}'
 
-# 3. Upload a document for RAG (parsed + embedded by the worker)
+# 3. Upload a document for RAG: PDF, Word, PNG/JPEG or text (parsed + embedded by the worker)
 curl -X POST http://localhost:8000/documents/upload \
   -H "Authorization: Bearer <TOKEN>" \
   -F "file=@./mydoc.pdf"
@@ -91,6 +100,19 @@ explains it, and the API does not start.
 
 See available models: https://ollama.com/library
 
+## Evaluations
+
+Two harnesses measure the parts a model change can break (they need Ollama running):
+
+```bash
+docker compose exec api python -m app.eval.tool_routing   # which tool the agent picks, 38 messages
+docker compose exec api python -m app.eval.retrieval      # Recall@k and MRR over the loaded documents
+```
+
+With qwen2.5 7B the agent picks the right first tool in 84–90% of the routing cases (it
+varies a little between sessions even at temperature 0). The misses are mostly asking
+the user for an id instead of looking it up first; see the [dev log, Part 37](../Docs/BITACORA-parte-37.md).
+
 ## Pre-pulling models (optional)
 
 To download models before first chat (faster startup):
@@ -103,9 +125,12 @@ docker-compose up api worker
 
 ## Where to extend
 
-- `app/agent/tools/` — add a file per new tool, register it in `tools/__init__.py`.
-- `app/agent/memory.py` — add long-term memory (summaries recalled via pgvector).
-- `app/rag/` — tune chunking, add re-ranking or metadata filters.
+- `app/agent/tools/` — add a file per new tool, register it in `tools/__init__.py`, and add
+  cases to `app/eval/datasets/tool_routing.yaml` to measure that the agent picks it.
+- `app/agent/memory_extraction.py` / `app/rag/memory_retriever.py` — what long-term memory
+  keeps and how it is recalled.
+- `app/rag/` — `ingest.py` decides how each file type is read and chunked; `retriever.py`
+  and `reranker.py` the search.
 - `app/core/security.py` — JWT auth for a single client (password login at `/auth/login`); extend it to multiple users with per-user claims.
 
 ## Migrations
