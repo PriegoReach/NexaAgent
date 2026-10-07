@@ -23,7 +23,7 @@ router = APIRouter(
 
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(file: UploadFile = File(...)) -> DocumentResponse:
-    # Antes de crear nada: un tipo que el parser no sabe leer (p. ej. .docx) se
+    # Antes de crear nada: un tipo que el parser no sabe leer (p. ej. .xlsx) se
     # indexaría como texto basura.
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
@@ -31,7 +31,8 @@ async def upload_document(file: UploadFile = File(...)) -> DocumentResponse:
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
                 f"No puedo indexar archivos {suffix or 'sin extensión'}. "
-                "Sube un PDF o un archivo de texto (.txt, .md, .csv, .json…)."
+                "Sube un PDF, un Word (.docx), una imagen (.png, .jpg) o un archivo "
+                "de texto (.txt, .md, .csv, .json…)."
             ),
         )
 

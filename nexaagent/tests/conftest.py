@@ -152,9 +152,12 @@ async def client():
 
 @pytest_asyncio.fixture
 async def auth_token(client):
-    """JWT válido obtenido por el flujo real de /auth/login."""
+    """JWT válido obtenido por el flujo real de /auth/login. Se borra la cookie de
+    sesión que pone el login: los tests que usan el token prueban el header
+    Authorization, no la cookie (esa la prueban sus propios tests)."""
     resp = await client.post("/auth/login", json={"password": "test-password"})
     assert resp.status_code == 200, resp.text
+    client.cookies.clear()
     return resp.json()["access_token"]
 
 

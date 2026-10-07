@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { login } from "../api";
 
 interface LoginProps {
-  onAuthenticated: (token: string) => void;
+  onAuthenticated: () => void;
   notice: string | null;
 }
 
@@ -19,8 +19,8 @@ export function Login({ onAuthenticated, notice }: LoginProps) {
     setLoading(true);
     setError(null);
     try {
-      const token = await login(password);
-      onAuthenticated(token);
+      await login(password);
+      onAuthenticated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado.");
       setLoading(false); // en éxito desmontamos, no hace falta resetear

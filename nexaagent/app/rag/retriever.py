@@ -14,7 +14,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.db.worker_db import worker_session
 from app.rag.embeddings import get_embeddings
-from app.rag.reranker import rerank
+from app.rag.reranker import rerank, rerank_order
 
 logger = logging.getLogger("nexa.retriever")
 
@@ -155,3 +155,24 @@ async def search(query: str, k: int = 8, dual: bool = False) -> list[str]:
     if not candidates:
         return []
     return await asyncio.to_thread(rerank, query, candidates, k)
+
+
+async def search_with_sources(query: str, k: int = 8, dual: bool = False) -> list[tuple[str, str]]:
+    """Como search, pero cada fragmento va con el nombre del documento del que sale,
+    para que el agente pueda citar la fuente: [(contenido, nombre_de_archivo), ...]."""
+    fetch_n = DUAL_FETCH_N if dual else FETCH_N
+    candidates = await _retrieve_ids(query, k=fetch_n, dual=dual)
+    if not candidates:
+        return []
+    order = await asyncio.to_thread(rerank_order, query, [c for _, c in candidates], k)
+    names = await _document_names({doc_id for doc_id, _ in candidates})
+    return [(candidates[i][1], names.get(candidates[i][0], "documento")) for i in order]
+
+
+async def _document_names(document_ids: set[int]) -> dict[int, str]:
+    async with worker_session() as session:
+        rows = await session.execute(
+            text("SELECT id, filename FROM documents WHERE id = ANY(:ids)"),
+            {"ids": list(document_ids)},
+        )
+        return {r.id: r.filename for r in rows}

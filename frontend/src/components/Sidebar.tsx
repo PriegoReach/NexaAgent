@@ -12,6 +12,7 @@ interface SidebarProps {
   onNew: () => void;
   onDelete: (id: number) => void;
   onOpenDocuments: () => void;
+  onOpenMemory: () => void;
   onOpenConnections: () => void;
   onSignOut: () => void;
 }
@@ -45,6 +46,7 @@ export function Sidebar({
   onNew,
   onDelete,
   onOpenDocuments,
+  onOpenMemory,
   onOpenConnections,
   onSignOut,
 }: SidebarProps) {
@@ -91,6 +93,14 @@ export function Sidebar({
         >
           <DocsIcon />
           Documentos
+        </button>
+        <button
+          className="btn btn--ghost btn--block-left"
+          type="button"
+          onClick={onOpenMemory}
+        >
+          <MemoryIcon />
+          Memoria
         </button>
         <button
           className="btn btn--ghost btn--block-left"
@@ -256,6 +266,20 @@ function LinkIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function MemoryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 4a5 5 0 0 0-5 5v1.2A3.5 3.5 0 0 0 8.5 17H9v2a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-2h.5A3.5 3.5 0 0 0 17 10.2V9a5 5 0 0 0-5-5Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M10 13h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

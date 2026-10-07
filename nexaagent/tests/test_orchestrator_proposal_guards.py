@@ -1,4 +1,4 @@
-"""Tests de las protecciones contra propuestas sin acción pendiente (orchestrator.py).
+"""Tests de las protecciones contra respuestas que aparentan una acción (orchestrator.py).
 
 El modelo a veces COPIA del historial una propuesta ("Responde sí para confirmar…")
 sin llamar a la tool: el usuario ve una propuesta, pero no hay nada pendiente, y su
@@ -7,6 +7,8 @@ sin llamar a la tool: el usuario ve una propuesta, pero no hay nada pendiente, y
     aviso (en streaming, con un evento `replace`) y eso es lo que se guarda;
   - un sí/no que contesta a una propuesta que ya no está pendiente (caducó o se
     imitó) recibe una respuesta fija y no llega al modelo.
+Y otra parecida: si el modelo ESCRIBE la llamada a una herramienta en vez de hacerla
+('CallChecka_webhook({...})'), no se ejecutó nada; también se sustituye por un aviso.
 
 Sin Ollama ni Redis: el modelo, la memoria de corto plazo y la acción pendiente se
 sustituyen por dobles. Los mensajes van a la BD real de test.
@@ -202,3 +204,49 @@ async def test_yes_to_a_normal_question_reaches_the_model(env, conversation_id):
 
     assert env["model_calls"] == 1
     assert answer == "Encontré la política de vacaciones."
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        'CallChecka_webhook({"message": "El respaldo ha finalizado."})',
+        "CallChecka la herramienta `search_knowledge_base` para encontrar el documento.",
+        '<tool_call>\n{"name": "list_tasks", "arguments": {}}\n</tool_call>',
+        'Voy a buscarlo: search_knowledge_base(query="vacaciones")',
+        'send_email({"to": "juan@example.com", "subject": "Hola"})',
+    ],
+)
+def test_detects_tool_calls_written_as_text(answer):
+    assert orchestrator.is_tool_call_as_text(answer)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Tienes 2 tareas pendientes: pagar la luz y llamar al contador.",
+        "Según politica.pdf, son 15 días hábiles (más 2 por antigüedad).",
+        'En JavaScript:\n```js\nguardar({"id": 1});\n```',
+        "Busqué en tus documentos y no encontré nada sobre eso.",
+        "Usé search_knowledge_base (la búsqueda en documentos) y no encontré nada.",
+        "",
+    ],
+)
+def test_ignores_normal_answers_and_code_blocks(answer):
+    assert not orchestrator.is_tool_call_as_text(answer)
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["sync", "stream"])
+async def test_tool_call_written_as_text_is_replaced(env, conversation_id, stream):
+    env["answer"] = 'CallChecka_webhook({"message": "El respaldo terminó."})'
+
+    if stream:
+        events = await _stream(conversation_id, "avisa al sistema que terminó el respaldo")
+        assert {"type": "replace", "value": orchestrator._TOOL_CALL_AS_TEXT} in events
+        assert events[-1] == {"type": "done"}
+    else:
+        answer = await orchestrator.run_agent(conversation_id, "avisa al sistema que terminó el respaldo")
+        assert answer == orchestrator._TOOL_CALL_AS_TEXT
+
+    assert await _stored_answer(conversation_id) == orchestrator._TOOL_CALL_AS_TEXT
+    # El historial tampoco guarda la llamada escrita, para que el modelo no la repita.
+    assert env["history"][-1]["content"] == orchestrator._TOOL_CALL_AS_TEXT

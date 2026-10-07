@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-env-with-secrets-token-urlsafe-48"
     jwt_algorithm: str = "HS256"
     jwt_expires_hours: int = 24
+    # La cookie de sesión de la web solo viaja por HTTPS si es True. En local
+    # (http://localhost) tiene que ser False; ponlo a True detrás de HTTPS.
+    session_cookie_secure: bool = False
     # --------------------------------------------------------------------
 
     ollama_base_url: str = "http://ollama:11434"
