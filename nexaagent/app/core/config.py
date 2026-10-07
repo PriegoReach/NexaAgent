@@ -69,15 +69,22 @@ class Settings(BaseSettings):
     # de la red interna de compose. Override por env si cambia host/puerto.
     tts_base_url: str = "http://tts:8000"
 
+    # --- http_get --------------------------------------------------------
+    # Dominios que la tool http_get puede consultar SIEMPRE (incluye subdominios),
+    # además de los que el usuario escribe en la conversación. Lista JSON por env:
+    # HTTP_GET_ALLOWED_DOMAINS=["wttr.in","api.github.com"]
+    http_get_allowed_domains: list[str] = []
+
     # --- OAuth Google (P25) ---------------------------------------------
     # client_id/secret de un cliente OAuth tipo "Desktop app" (estáticos ->
     # van en secrets, mismo patrón que jwt_secret/postgres_password). Los
     # TOKENS (dinámicos) NO viven aquí: van a la tabla oauth_accounts.
     google_client_id: str = ""
     google_client_secret: str = ""
-    # Zona horaria para CREAR eventos (P26). Se envía como `timeZone` junto a un
-    # dateTime SIN offset -> Google lo interpreta en esta zona. Evita hacer
-    # aritmética de offsets a mano (y arrastrar zoneinfo/pytz). Ajustable por env.
+    # Zona horaria del usuario (P26). Se envía como `timeZone` junto a un dateTime
+    # SIN offset -> Google lo interpreta en esta zona, sin aritmética de offsets a
+    # mano. También fija qué día es "hoy" para "mañana"/"el viernes"
+    # (app/core/clock.py). Ajustable por env.
     calendar_timezone: str = "America/Mexico_City"
     # --------------------------------------------------------------------
 

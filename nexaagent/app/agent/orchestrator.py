@@ -22,7 +22,7 @@ from app.agent.confirmable import CONFIRMABLE_ACTIONS
 from app.agent.tools import get_tools
 from app.core.config import settings
 from app.core.exceptions import UpstreamUnavailable
-from app.core.log_context import conversation_id_var, request_id_var
+from app.core.log_context import conversation_id_var, request_id_var, user_input_var
 from app.db.models import Message
 from app.db.session import SessionLocal
 from app.workers.tasks import extract_memories_task
@@ -64,7 +64,9 @@ SYSTEM_PROMPT = (
     "poder responder sobre su contenido después), usa `ingest_drive_file` con el id "
     "que devolvió `list_drive_files`. Tras indexarlo, responde sobre su contenido con "
     "`search_knowledge_base` como con cualquier documento.\n"
-    "- Para llamar a APIs externas usa la herramienta de peticiones HTTP."
+    "- Para consultar una página o una API externa usa `http_get`. Solo funciona con "
+    "dominios que el usuario haya escrito en la conversación: si necesitas otro, "
+    "pregúntale nombrando el dominio y pídele que lo escriba para confirmarlo."
 )
 
 MEMORY_EXTRACTION_EVERY = 6  # cada 3 intercambios (user + assistant)
@@ -283,6 +285,7 @@ def _proposal_text(intent: dict) -> str:
 
 async def run_agent(conversation_id: int, user_input: str) -> str:
     conversation_id_var.set(str(conversation_id))
+    user_input_var.set(user_input)
     logger.info("agent run start", extra={"event": "agent_start"})
 
     history = await memory.load_history(conversation_id)
@@ -385,6 +388,7 @@ async def run_agent_stream(conversation_id: int, user_input: str):
     al cerrar persiste igual que run_agent (Redis + Postgres + extracción).
     """
     conversation_id_var.set(str(conversation_id))
+    user_input_var.set(user_input)
     logger.info("agent run start", extra={"event": "agent_start", "stream": True})
 
     history = await memory.load_history(conversation_id)
