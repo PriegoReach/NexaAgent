@@ -35,8 +35,9 @@ def _get_model():
     return _model
 
 
-def rerank(query: str, chunks: list[str], top_k: int) -> list[str]:
-    """Reordena `chunks` por relevancia a `query`; devuelve los top_k mejores.
+def rerank_order(query: str, chunks: list[str], top_k: int) -> list[int]:
+    """Índices de `chunks` de más a menos relevante para `query`; los top_k mejores.
+    Con índices el llamador conserva lo que acompaña a cada fragmento (su documento).
 
     Es SYNC (CrossEncoder.predict bloquea y usa GPU o CPU). El caller async lo invoca
     con asyncio.to_thread para no bloquear el event loop.
@@ -44,5 +45,9 @@ def rerank(query: str, chunks: list[str], top_k: int) -> list[str]:
     if not chunks:
         return []
     scores = _get_model().predict([(query, c) for c in chunks])  # ve query+chunk JUNTOS
-    ranked = [c for _, c in sorted(zip(scores, chunks), key=lambda pair: pair[0], reverse=True)]
-    return ranked[:top_k]
+    return sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)[:top_k]
+
+
+def rerank(query: str, chunks: list[str], top_k: int) -> list[str]:
+    """Reordena `chunks` por relevancia a `query`; devuelve los top_k mejores."""
+    return [chunks[i] for i in rerank_order(query, chunks, top_k)]

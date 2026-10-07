@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.tools import tool
 
-from app.rag.retriever import search
+from app.rag.retriever import search_with_sources
 
 
 def _run_async(coro):
@@ -21,9 +21,10 @@ def search_knowledge_base(query: str) -> str:
     """Search the company's ingested documents for relevant context.
 
     Use this whenever the user asks about internal documents, policies,
-    or any information that may live in uploaded files.
+    or any information that may live in uploaded files. Each fragment starts with
+    a "[Fuente: <archivo>]" line: name that file when you use the fragment.
     """
-    results = _run_async(search(query, k=8, dual=True))
+    results = _run_async(search_with_sources(query, k=8, dual=True))
     if not results:
         return "No relevant documents found."
-    return "\n\n---\n\n".join(results)
+    return "\n\n---\n\n".join(f"[Fuente: {name}]\n{content}" for content, name in results)

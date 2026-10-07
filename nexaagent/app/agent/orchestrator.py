@@ -41,6 +41,8 @@ SYSTEM_PROMPT = (
     "realmente a la herramienta. Ante la duda, USA la herramienta.\n"
     "- Basa tu respuesta ÚNICAMENTE en lo que devuelvan las herramientas. Solo si no "
     "devuelven nada, di que no encontraste información.\n"
+    "- Cada fragmento de `search_knowledge_base` empieza con '[Fuente: archivo]'. Al "
+    "responder con esa información, di de qué archivo sale.\n"
     "- Cuando el usuario te pida recordar, anotar o agendar algo, USA `create_task`, "
     "pasando la fecha TAL COMO la dijo el usuario (p. ej. 'el viernes', 'mañana', "
     "'15 de junio'). NO la conviertas a otro formato ni calcules el día; de eso se "

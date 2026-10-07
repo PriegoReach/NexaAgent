@@ -9,14 +9,14 @@ PASOS SEPARABLES (no es magia de un paso): list_drive_files busca, ingest_drive_
 trae+indexa, y preguntar es RAG normal (search_knowledge_base) sobre lo ya ingestado.
 
 Dos caminos de ingesta según el mimeType:
-  - BINARIO (application/pdf, text/*): files.get?alt=media -> bytes tal cual.
+  - BINARIO (PDF, Word .docx, imágenes PNG/JPEG, text/*): files.get?alt=media ->
+    bytes tal cual; ingest lee el .docx y pasa OCR a imágenes y PDF escaneados.
   - GOOGLE DOC NATIVO (vnd.google-apps.document): files.export?mimeType=text/plain
     -> Google lo convierte a texto (no se puede descargar 'tal cual', es nativo).
-  - Sheets/Slides/imágenes/otros: NO soportados (formato no-texto / OCR es
-    extensión futura). Mensaje claro, nunca excepción.
+  - Sheets/Slides/otros: NO soportados. Mensaje claro, nunca excepción.
 
 El puente al pipeline: ingest_document recibe un PATH y decide por el sufijo
-(.pdf->PdfReader, otro->read_text), así que escribimos lo traído a un archivo
+(ver ingest._read_file), así que escribimos lo traído a un archivo
 temporal con la extensión correcta y lo borramos al terminar.
 
 httpx directo con timeout, sin google-api-python-client. Cross-loop: todo el I/O
@@ -47,9 +47,19 @@ _GDOC_MIME = "application/vnd.google-apps.document"
 # mayor que el _HTTP_TIMEOUT=15 estándar del proyecto.
 _HTTP_TIMEOUT = 30
 
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+# Binarios que se descargan tal cual -> sufijo con el que ingest los reconoce.
+_DOWNLOAD_SUFFIX = {
+    "application/pdf": ".pdf",
+    _DOCX_MIME: ".docx",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+}
+
 # mimeType -> etiqueta legible (para que el usuario/agente sepa qué es cada archivo).
 _FRIENDLY = {
     "application/pdf": "PDF",
+    _DOCX_MIME: "Word (.docx)",
     _GDOC_MIME: "Google Doc",
     "application/vnd.google-apps.spreadsheet": "Google Sheet (no soportado)",
     "application/vnd.google-apps.presentation": "Google Slides (no soportado)",
@@ -68,7 +78,7 @@ def _friendly_type(mime: str) -> str:
     if mime.startswith("text/"):
         return "texto"
     if mime.startswith("image/"):
-        return "imagen (no soportado)"
+        return "imagen" if mime in _DOWNLOAD_SUFFIX else "imagen (no soportada)"
     return mime
 
 
@@ -145,21 +155,22 @@ async def _fetch_content(client: httpx.AsyncClient, file_id: str, mime: str,
         )
         resp.raise_for_status()
         return resp.content, ".txt"
-    if mime == "application/pdf":
+    if mime in _DOWNLOAD_SUFFIX:
         resp = await client.get(
             f"{_DRIVE_FILES_URL}/{file_id}", params={"alt": "media"}, headers=headers
         )
         resp.raise_for_status()
-        return resp.content, ".pdf"
+        return resp.content, _DOWNLOAD_SUFFIX[mime]
     if mime.startswith("text/"):
         resp = await client.get(
             f"{_DRIVE_FILES_URL}/{file_id}", params={"alt": "media"}, headers=headers
         )
         resp.raise_for_status()
         return resp.content, ".txt"
-    # Sheets, Slides, imágenes, Office binario, etc.: no soportados.
+    # Sheets, Slides, Excel, PowerPoint, etc.: no soportados.
     return (f"El archivo es de tipo '{_friendly_type(mime)}' y aún no puedo "
-            "ingestarlo. Por ahora solo soporto PDF, texto y Google Docs.")
+            "ingestarlo. Por ahora soporto PDF, Word (.docx), imágenes PNG/JPEG, "
+            "texto y Google Docs.")
 
 
 async def _get_or_create_document(drive_file_id: str, name: str) -> tuple[int, bool]:
@@ -272,7 +283,8 @@ def ingest_drive_file(file_id: str) -> str:
     """Bring a file from the user's Google Drive into the knowledge base (RAG) so
     it can be searched and asked about. Use this when the user wants to ingest,
     index or import a specific Drive document (use the id from list_drive_files).
-    Supports PDF, plain text and native Google Docs. After ingesting, the user can
+    Supports PDF (also scanned, via OCR), Word (.docx), PNG/JPEG images (OCR),
+    plain text and native Google Docs. After ingesting, the user can
     ask about its content normally (it goes through search_knowledge_base).
 
     Args:

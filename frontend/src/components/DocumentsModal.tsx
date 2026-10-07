@@ -7,9 +7,10 @@ interface DocumentsModalProps {
   onSessionExpired: () => void;
 }
 
-// El parser del backend maneja bien PDF y texto plano; binarios como .docx no.
-// Misma lista que SUPPORTED_SUFFIXES en el backend (app/rag/ingest.py).
-const ACCEPT = ".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.log,.yaml,.yml,.rst,.text";
+// Lo que el backend sabe leer: PDF (los escaneados, con OCR), Word, imágenes (OCR)
+// y texto plano. Misma lista que SUPPORTED_SUFFIXES en el backend (app/rag/ingest.py).
+const ACCEPT =
+  ".pdf,.docx,.png,.jpg,.jpeg,.txt,.md,.markdown,.csv,.tsv,.json,.log,.yaml,.yml,.rst,.text";
 const SUPPORTED = ACCEPT.split(",");
 
 // `accept` solo filtra el diálogo de abrir archivo: lo que se arrastra llega tal cual.
@@ -69,7 +70,7 @@ export function DocumentsModal({ onClose, onSessionExpired }: DocumentsModalProp
       const skipped = all.filter((f) => !isSupported(f));
       setError(
         skipped.length
-          ? `No subí ${skipped.map((f) => f.name).join(", ")}: solo se pueden indexar PDF y archivos de texto (.txt, .md, .csv, .json…).`
+          ? `No subí ${skipped.map((f) => f.name).join(", ")}: solo se pueden indexar PDF, Word (.docx), imágenes (.png, .jpg) y archivos de texto (.txt, .md, .csv, .json…).`
           : null,
       );
       if (accepted.length === 0) {
@@ -132,9 +133,9 @@ export function DocumentsModal({ onClose, onSessionExpired }: DocumentsModalProp
 
         <div className="modal__body">
           <p className="conn__hint">
-            Sube documentos para que Nexa los busque al responder. Funciona con PDF
-            y texto (.txt, .md, .csv, .json). Los PDF escaneados, sin texto, todavía
-            no se pueden leer.
+            Sube documentos para que Nexa los busque al responder y te diga de cuál
+            sale cada dato. Funciona con PDF (también escaneados), Word (.docx),
+            imágenes (.png, .jpg) y texto (.txt, .md, .csv, .json).
           </p>
 
           <div
@@ -250,7 +251,7 @@ function StatusBadge({ status }: { status: string }) {
     return (
       <span
         className="doc-badge doc-badge--empty"
-        title="No encontré texto que indexar. Si es un PDF escaneado, todavía no se puede leer."
+        title="No encontré texto que indexar, ni leyendo la imagen con OCR."
       >
         Sin texto
       </span>

@@ -1,4 +1,10 @@
+import logging
+import shutil
+import subprocess
+import tempfile
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
@@ -7,22 +13,105 @@ from sqlalchemy import text
 from app.db.worker_db import worker_session
 from app.rag.embeddings import get_embeddings
 
+logger = logging.getLogger("nexa.ingest")
 
-# Lo que _read_file sabe leer: PDF (con PdfReader) y texto plano (todo lo demás se lee
-# como texto, así que un binario como .docx daría basura). /documents/upload rechaza
-# el resto; la UI usa la misma lista.
+# Lo que _read_file sabe leer: PDF (con texto, o escaneado vía OCR), Word (.docx),
+# imágenes (OCR) y texto plano. /documents/upload rechaza el resto; la UI usa la
+# misma lista.
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg"})
 SUPPORTED_SUFFIXES = frozenset({
-    ".pdf", ".txt", ".text", ".md", ".markdown", ".rst",
+    ".pdf", ".docx", ".txt", ".text", ".md", ".markdown", ".rst",
     ".csv", ".tsv", ".json", ".yaml", ".yml", ".log",
-})
+}) | _IMAGE_SUFFIXES
+
+# Un PDF con menos texto que esto se trata como escaneado y se intenta con OCR.
+_MIN_PDF_TEXT = 20
+_OCR_LANGS = "spa+eng"
+_OCR_MAX_PAGES = 30          # cota: el OCR tarda unos segundos por página
+_OCR_TIMEOUT = 120           # segundos por imagen
+_DOCX_MAX_XML = 50 * 1024 * 1024   # un document.xml mayor huele a zip bomb
 
 
 def _read_file(path: str) -> str:
     p = Path(path)
-    if p.suffix.lower() == ".pdf":
+    suffix = p.suffix.lower()
+    if suffix == ".pdf":
         reader = PdfReader(str(p))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        content = "\n".join(page.extract_text() or "" for page in reader.pages)
+        if len(content.strip()) < _MIN_PDF_TEXT:
+            content = _ocr_pdf(p) or content   # escaneado: las páginas son imágenes
+        return content
+    if suffix == ".docx":
+        return _read_docx(p)
+    if suffix in _IMAGE_SUFFIXES:
+        return _ocr_image(p)
     return p.read_text(encoding="utf-8", errors="ignore")
+
+
+# --- Word (.docx) ----------------------------------------------------------
+# Sin dependencias: un .docx es un zip con el cuerpo en word/document.xml.
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _paragraph_text(paragraph: ElementTree.Element) -> str:
+    out: list[str] = []
+
+    def walk(node: ElementTree.Element) -> None:
+        for child in node:
+            if child.tag == f"{_W}p":
+                continue   # párrafo anidado (cuadro de texto): sale por su cuenta
+            if child.tag == f"{_W}t" and child.text:
+                out.append(child.text)
+            elif child.tag == f"{_W}tab":
+                out.append("\t")
+            elif child.tag in (f"{_W}br", f"{_W}cr"):
+                out.append("\n")
+            walk(child)
+
+    walk(paragraph)
+    return "".join(out)
+
+
+def _read_docx(path: Path) -> str:
+    """Un párrafo (w:p) por línea, también los de las celdas de las tablas."""
+    with zipfile.ZipFile(path) as docx:
+        if docx.getinfo("word/document.xml").file_size > _DOCX_MAX_XML:
+            raise ValueError("word/document.xml demasiado grande")
+        root = ElementTree.fromstring(docx.read("word/document.xml"))
+    return "\n".join(_paragraph_text(p) for p in root.iter(f"{_W}p"))
+
+
+# --- OCR ---------------------------------------------------------------------
+# tesseract y pdftoppm vienen en la imagen de Docker. Sin ellos (p. ej. fuera de
+# Docker) el OCR no se intenta y el documento termina como 'empty' ("Sin texto").
+
+def _ocr_image(path: Path) -> str:
+    if shutil.which("tesseract") is None:
+        logger.warning("ocr not available (tesseract missing)", extra={"file": path.name})
+        return ""
+    result = subprocess.run(
+        ["tesseract", str(path), "-", "-l", _OCR_LANGS],
+        capture_output=True, text=True, timeout=_OCR_TIMEOUT,
+    )
+    if result.returncode != 0:
+        logger.warning("ocr failed", extra={"file": path.name, "stderr": result.stderr[-300:]})
+        return ""
+    return result.stdout
+
+
+def _ocr_pdf(path: Path) -> str:
+    """PDF escaneado: cada página a imagen (pdftoppm) y luego OCR (tesseract)."""
+    if shutil.which("pdftoppm") is None or shutil.which("tesseract") is None:
+        logger.warning("ocr not available (pdftoppm/tesseract missing)", extra={"file": path.name})
+        return ""
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(
+            ["pdftoppm", "-r", "200", "-l", str(_OCR_MAX_PAGES), "-png", str(path), f"{tmp}/page"],
+            check=True, capture_output=True, timeout=_OCR_TIMEOUT * 2,
+        )
+        pages = sorted(Path(tmp).glob("page*.png"))   # pdftoppm numera con ceros a la izquierda
+        logger.info("ocr pdf", extra={"file": path.name, "pages": len(pages)})
+        return "\n\n".join(_ocr_image(page) for page in pages)
 
 
 # --- Chunking estructural -------------------------------------
