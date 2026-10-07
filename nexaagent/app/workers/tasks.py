@@ -13,6 +13,7 @@ from app.core.log_context import conversation_id_var, request_id_var
 from app.core.logging_config import setup_logging
 from app.rag.ingest import ingest_document
 from app.workers.celery_app import celery_app
+from app.workers.reminders import send_daily_digest
 
 
 @celery_setup_logging.connect
@@ -102,3 +103,10 @@ def extract_memories_task(conversation_id: int, request_id: str = "-") -> int:
     conversation_id_var.set(str(conversation_id))
     logger.info("memory task received", extra={"event": "celery_start"})
     return asyncio.run(extract_and_store_memories(conversation_id))
+
+
+@celery_app.task(name="send_daily_reminders")
+def send_daily_reminders_task() -> str:
+    """Celery beat la lanza cada hora (celery_app.beat_schedule); send_daily_digest
+    decide si toca mandar hoy el resumen de tareas."""
+    return asyncio.run(send_daily_digest())

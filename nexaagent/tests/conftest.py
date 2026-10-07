@@ -57,7 +57,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # las listamos todas explícitamente para que el reset de identidades sea total.
 TABLES = [
     "conversations", "messages", "documents", "document_chunks", "long_term_memories",
-    "sent_emails", "tasks", "oauth_accounts",
+    "sent_emails", "tasks", "oauth_accounts", "webhook_events", "reminder_digests",
 ]
 
 
