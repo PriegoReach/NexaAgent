@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.core.security import require_jwt
 from app.db.worker_db import worker_session
 from app.integrations import google_oauth
@@ -38,6 +39,17 @@ async def google_start() -> StartResponse:
     """Devuelve la URL de autorización. El usuario la abre en su navegador,
     autoriza, y copia el `code` de la barra de direcciones (http://localhost/?code=...
     fallará al conectar — es esperado; el code está en la URL)."""
+    if not (settings.google_client_id and settings.google_client_secret):
+        # Integración opcional sin configurar: sin esto se devolvía una URL de Google
+        # con client_id vacío, que acaba en una página de error de Google.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Google no está configurado: escribe las credenciales de tu cliente "
+                "OAuth en secrets/google_client_id.txt y secrets/google_client_secret.txt "
+                "y reinicia la API."
+            ),
+        )
     return StartResponse(auth_url=google_oauth.build_auth_url())
 
 

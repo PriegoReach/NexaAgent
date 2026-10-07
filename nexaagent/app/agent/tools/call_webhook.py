@@ -8,6 +8,7 @@ import httpx
 from langchain_core.tools import tool
 from sqlalchemy import text
 
+from app.core.config import read_secret_file
 from app.db.worker_db import worker_session
 
 logger = logging.getLogger("nexa.tools")
@@ -20,12 +21,9 @@ def _run_async(coro):
 
 def _webhook_url() -> str | None:
     # La URL del webhook es una CREDENCIAL externa: archivo en /run/secrets/, con
-    # fallback a env var para desarrollo.
-    path = "/run/secrets/webhook_url"
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return os.getenv("WEBHOOK_URL")
+    # fallback a env var para desarrollo. Opcional: vacía (o sin archivo) = no hay
+    # webhook, y la tool lo dice.
+    return read_secret_file(os.getenv("WEBHOOK_URL", ""), "webhook_url") or None
 
 
 def _event_key(message: str) -> str:

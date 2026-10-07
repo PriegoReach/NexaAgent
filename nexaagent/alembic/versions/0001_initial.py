@@ -18,6 +18,8 @@ from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
+from app.core.config import settings
+
 
 # revision identifiers, used by Alembic.
 revision = "0001_initial"
@@ -25,7 +27,11 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-EMBEDDING_DIM = 768  # nomic-embed-text. Debe coincidir con settings.embedding_dim.
+# La dimensión de los vectores sale de la configuración (EMBEDDING_DIM), no de un
+# número fijo: con otro modelo de embeddings, una base nueva se crea ya con la
+# dimensión correcta. En una base existente no cambia nada (la migración ya corrió);
+# app/db/schema_check.py avisa si la configuración y la base no coinciden.
+EMBEDDING_DIM = settings.embedding_dim
 
 
 def upgrade() -> None:

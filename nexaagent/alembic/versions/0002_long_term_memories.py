@@ -11,13 +11,15 @@ from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
+from app.core.config import settings
+
 
 revision = "0002_long_term_memories"
 down_revision = "0001_initial"
 branch_labels = None
 depends_on = None
 
-EMBEDDING_DIM = 768  # nomic-embed-text; coincide con settings.embedding_dim
+EMBEDDING_DIM = settings.embedding_dim  # de la configuración, como en 0001_initial
 
 
 def upgrade() -> None:

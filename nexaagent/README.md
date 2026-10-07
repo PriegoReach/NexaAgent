@@ -21,8 +21,14 @@ FastAPI + PostgreSQL (pgvector) + Redis + Celery + **Ollama (local LLM)**.
 
 ```bash
 cp .env.example .env          # no need to change anything for local setup
-docker-compose up --build
+python scripts/init_secrets.py   # creates secrets/: random keys, asks for your login password
+docker compose up --build
 ```
+
+`init_secrets.py` leaves the optional integrations empty (= disabled): to use Google, write your
+OAuth client credentials to `secrets/google_client_id.txt` and `secrets/google_client_secret.txt`;
+for the webhook, its URL to `secrets/webhook_url.txt`. Run it **before** the first `up`: if a
+secret file is missing, Docker silently creates an empty *directory* with that name instead.
 
 **First run takes a while (around 10 minutes or more, depending on your connection)** because Ollama downloads the models (qwen2.5 ~4.7GB, nomic-embed-text ~274MB).
 
@@ -74,11 +80,14 @@ EMBEDDING_DIM=1024             # must match your embedding model's output
 > `qwen2.5:14b` takes about 9 GB of GPU memory, versus about 4.7 GB for the 7B. If the GPU also loads the
 > reranker or the TTS service, it may not fit on 12 GB cards.
 
-**Important:** If you change `EMBEDDING_DIM`, you need to recreate the database:
+**Important:** If you change `EMBEDDING_DIM`, you need to recreate the database (the migrations
+create the vector columns with the configured dimension):
 ```bash
-docker-compose down -v         # drops volumes (loses data!)
-docker-compose up --build
+docker compose down -v         # drops volumes (loses data!)
+docker compose up --build
 ```
+If you change it without recreating the database, the `migrate` service detects the mismatch,
+explains it, and the API does not start.
 
 See available models: https://ollama.com/library
 

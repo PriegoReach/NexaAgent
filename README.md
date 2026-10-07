@@ -93,16 +93,15 @@ cp .env.example .env          # ajusta modelos/zona horaria si quieres
 **Crea los archivos de secretos** (están en `.gitignore`, nunca se versionan). El backend los lee de `nexaagent/secrets/` y `docker-compose` los monta como Docker secrets:
 
 ```bash
-mkdir -p secrets
-python -c "import secrets;print(secrets.token_urlsafe(48))" > secrets/jwt_secret.txt
-printf 'mi-password'      > secrets/auth_password.txt      # la que envías a /auth/login
-printf 'nexa'             > secrets/postgres_password.txt  # debe coincidir con el rol de la BD
-# Solo si usas las integraciones Google (Calendar/Gmail/Drive):
-printf 'TU_CLIENT_ID'     > secrets/google_client_id.txt
-printf 'TU_CLIENT_SECRET' > secrets/google_client_secret.txt
-# Solo si usas la tool call_webhook:
-printf 'https://...'      > secrets/webhook_url.txt
+python scripts/init_secrets.py
 ```
+
+El script genera `jwt_secret` y `postgres_password`, te pide la contraseña para entrar a Nexa (`auth_password`, la que envías a `/auth/login`) y deja **vacíos** los de las integraciones opcionales. Nunca sobrescribe un archivo que ya exista.
+
+- **Google** (Calendar/Gmail/Drive): escribe las credenciales de tu cliente OAuth en `secrets/google_client_id.txt` y `secrets/google_client_secret.txt`.
+- **Webhook** (`call_webhook`): escribe la URL en `secrets/webhook_url.txt`.
+
+> Créalos **antes** del primer `docker compose up`. Si falta un archivo, Docker no da error: crea una *carpeta* con ese nombre en `secrets/`. Si eso pasa, vuelve a ejecutar el script, que cambia las carpetas vacías por archivos. Con un secreto obligatorio en ese estado, la API no arranca y su log explica qué falta.
 
 Levanta el stack:
 
@@ -187,7 +186,7 @@ docker compose exec api alembic revision -m "mi cambio"
 docker compose run --rm migrate
 ```
 
-> Si cambias `EMBEDDING_DIM` (modelo de embeddings distinto) hay que recrear la BD: `docker compose down -v` (¡borra datos!) y volver a levantar.
+> Si cambias `EMBEDDING_DIM` (modelo de embeddings distinto) hay que recrear la BD: `docker compose down -v` (¡borra datos!) y volver a levantar; las migraciones crean los vectores con la dimensión de `EMBEDDING_DIM`. Si cambias el valor sin recrear la base, el servicio `migrate` lo detecta, explica qué pasa y la API no arranca.
 
 ---
 
@@ -200,7 +199,7 @@ Cambiar de modelo (en `nexaagent/.env`):
 ```bash
 OLLAMA_MODEL=qwen2.5:14b             # u otro con tool-calling fiable → https://ollama.com/library
 OLLAMA_EMBEDDING_MODEL=mxbai-embed-large
-EMBEDDING_DIM=1024                   # debe coincidir con la salida del modelo
+EMBEDDING_DIM=1024                   # debe coincidir con la salida del modelo; obliga a recrear la BD
 ```
 
 > El modelo de chat debe soportar tool-calling de forma fiable. En pruebas, llama3.1 no invocaba
