@@ -1,6 +1,10 @@
+# Los servicios que se quedan corriendo llevan `restart: unless-stopped`: si se
+# reinicia el equipo o Docker, vuelven solos (y con el worker, los recordatorios
+# diarios). Un `docker compose stop` sí los deja parados.
 services:
   ollama:
     image: ollama/ollama:latest
+    restart: unless-stopped
     # Ollama, Postgres y Redis solo escuchan en 127.0.0.1: se pueden usar desde este
     # equipo (curl, un cliente SQL), pero no desde el resto de la red local. Redis no
     # tiene contraseña y en Postgres están los tokens de Google. La api y el worker
@@ -42,6 +46,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nexa}
       # P23: contraseña vía archivo (nativo de la imagen postgres), no env.
@@ -66,6 +71,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"   # solo este equipo (ver ollama)
 
@@ -97,6 +103,7 @@ services:
   # webhook se cambia en secrets/webhook_url.txt, no aquí (la gracia del mecanismo de S).
   webhook-receiver:
     build: .
+    restart: unless-stopped
     command: python /webhook_receiver.py
     volumes:
       - ./webhook_receiver.py:/webhook_receiver.py
@@ -104,6 +111,7 @@ services:
   api:
     build: .
     image: nexaagent-api   # nombre fijo: migrate reutiliza esta imagen
+    restart: unless-stopped
     env_file: .env
     environment:
       # Caché del modelo del reranker (bge-reranker-v2-m3) en un volumen, para no
@@ -149,6 +157,7 @@ services:
   # (app/workers/reminders.py). El archivo de estado del beat va a /tmp.
   worker:
     build: .
+    restart: unless-stopped
     command: celery -A app.workers.celery_app.celery_app worker --beat --schedule /tmp/celerybeat-schedule --loglevel=info
     env_file: .env
     depends_on:
@@ -181,6 +190,7 @@ services:
   # cachea en el volumen tts_cache para no re-descargarlo en cada recreación.
   tts:
     build: ./tts
+    restart: unless-stopped
     environment:
       - COQUI_TOS_AGREED=1
     deploy:
@@ -204,6 +214,9 @@ services:
   #   docker compose run --rm tests
   # Construye con dev deps (pytest) y apunta a una BD aparte (nexaagent_test).
   tests:
+    # Perfil propio: `docker compose up` no lo arranca; `docker compose run --rm
+    # tests` sí (al nombrar el servicio, compose activa su perfil).
+    profiles: ["tests"]
     build:
       context: .
       args:

@@ -29,7 +29,7 @@ FastAPI + PostgreSQL (pgvector) + Redis + Celery + **Ollama (local LLM)**.
 
 ```bash
 cp .env.example .env          # no need to change anything for local setup
-python scripts/init_secrets.py   # creates secrets/: random keys, asks for your login password
+python scripts/init_secrets.py   # creates secrets/: random keys, asks for your login password (Python 3.9+)
 docker compose up --build
 ```
 
@@ -111,16 +111,16 @@ docker compose exec api python -m app.eval.retrieval      # Recall@k and MRR ove
 
 With qwen2.5 7B the agent picks the right first tool in 84–90% of the routing cases (it
 varies a little between sessions even at temperature 0). The misses are mostly asking
-the user for an id instead of looking it up first; see the [dev log, Part 37](../Docs/BITACORA-parte-37.md).
+the user for an id instead of looking it up first; see the [dev log, Part 34](../Docs/BITACORA-parte-34.md).
 
 ## Pre-pulling models (optional)
 
 To download models before first chat (faster startup):
 ```bash
-docker-compose up -d ollama
-docker exec -it nexaagent-ollama-1 ollama pull qwen2.5
-docker exec -it nexaagent-ollama-1 ollama pull nomic-embed-text
-docker-compose up api worker
+docker compose up -d ollama
+docker compose exec ollama ollama pull qwen2.5
+docker compose exec ollama ollama pull nomic-embed-text
+docker compose up -d
 ```
 
 ## Where to extend
@@ -158,8 +158,10 @@ If you want to use a cloud LLM instead:
 
 ## Troubleshooting
 
-**"Connection refused" on first run**: Ollama takes ~30s to start and download models. Wait for the logs to show "models downloaded successfully", then retry.
+**"Connection refused" on first run**: Ollama takes a while to start and download the models. Wait until `docker compose logs init-ollama` shows "Models ready!", then retry.
 
 **Out of memory**: Ollama needs ~5GB of (V)RAM for qwen2.5 7B. If you're on a resource-constrained machine, use a smaller model like `qwen2.5:3b` (~2GB), at the cost of less reliable tool-calling.
 
-**Slow responses**: First query is always slower (model loading). Subsequent queries are fast (~1-2s).
+**Slow responses**: The first query is always slower (model and reranker loading). After that, answers take a few seconds.
+
+**Nexa did not come back after a reboot**: the services restart on their own (`restart: unless-stopped`) once Docker is running; on Windows/macOS, enable "Start Docker Desktop when you sign in".
