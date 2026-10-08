@@ -1,4 +1,4 @@
-# NexaAgent — Bitácora de desarrollo (Parte 37)
+# NexaAgent — Bitácora de desarrollo (Parte 34)
 
 > **Revisión completa y cierre de pendientes.** Con las tres fases cerradas, una pregunta
 > sencilla —«¿qué le falta?, ¿cumple sus funciones?»— abrió una auditoría de punta a punta.
@@ -8,7 +8,7 @@
 > tool correcta?), que destapó un fallo nuevo del 7B: escribir la llamada a una herramienta
 > como texto en vez de hacerla.
 
-**Estado al cierre de la Parte 37:** los 23 puntos cerrados. La CI está fusionada y probada en contenedores limpios, pero GitHub no ejecutará sus trabajos hasta que levante el bloqueo de facturación de la cuenta (ticket de soporte abierto). Lo que el sistema gana: los bugs en los que **lo que se mostraba no correspondía a lo que pasaba** (un correo «enviado» que no salió, una propuesta sin nada pendiente, «Conectado» con el acceso caducado, «Procesando…» eterno, «mañana» un día tarde) están cerrados y con tests; una instalación nueva funciona al primer `docker compose up`, con o sin GPU; los puertos internos ya no están abiertos a la red y `http_get` no puede usarse para sacar datos; y hay funciones nuevas: recordatorios diarios, Calendar completo, sesión que sobrevive a recargar, Markdown, panel de memoria, Word e imágenes con OCR, citas de la fuente y una evaluación del enrutado. La suite tiene ahora 248 tests y tarda unos 30 segundos (llegó a tardar 8,5 minutos).
+**Estado al cierre de la Parte 34:** los 23 puntos cerrados, y la CI de GitHub en verde en `main` (corre sola en cada PR y en cada push). Lo que el sistema gana: los bugs en los que **lo que se mostraba no correspondía a lo que pasaba** (un correo «enviado» que no salió, una propuesta sin nada pendiente, «Conectado» con el acceso caducado, «Procesando…» eterno, «mañana» un día tarde) están cerrados y con tests; una instalación nueva funciona al primer `docker compose up`, con o sin GPU; los puertos internos ya no están abiertos a la red y `http_get` no puede usarse para sacar datos; y hay funciones nuevas: recordatorios diarios, Calendar completo, sesión que sobrevive a recargar, Markdown, panel de memoria, Word e imágenes con OCR, citas de la fuente y una evaluación del enrutado. La suite tiene ahora 248 tests y tarda unos 30 segundos (llegó a tardar 8,5 minutos).
 
 ---
 
@@ -27,9 +27,9 @@ El ciclo por punto, siempre el mismo: **rama → arreglo → tests → verificac
 | #10 | `fix/documentos-y-historial` | b5 documentos sin texto, b6 memoria al retomar una conversación |
 | #11 | `fix/http-get-y-cpu` | s2 límites de `http_get`, i3 funcionamiento sin GPU |
 | #12 | `fix/secretos-y-embeddings` | i2 secretos opcionales, i4 dimensión de embeddings |
-| #13 | `ci/github-actions` | q2 CI (fusionada; GitHub no la ejecuta hasta desbloquear la cuenta) |
+| #13 | `ci/github-actions` | q2 CI |
 | #14 | `feat/recordatorios-calendar-tests` | f1 recordatorios, f2 Calendar completo, q1 tests (y la suite 15× más rápida) |
-| — | `feat/cierre-pendientes` | f6 sesión y Markdown, f4 panel de memoria, f3 Word/OCR/citas, f5 evaluación del enrutado, q3 documentación |
+| #15 | `feat/cierre-pendientes` | f6 sesión y Markdown, f4 panel de memoria, f3 Word/OCR/citas, f5 evaluación del enrutado, q3 documentación |
 
 ---
 
@@ -80,9 +80,9 @@ Y dos que aparecieron por el camino (PR #14): el **«31 de febrero»**, al escri
 
 ---
 
-## 5. La medición del enrutado (contenido propio de P37)
+## 5. La medición del enrutado (contenido propio de P34)
 
-**La pregunta:** ante cada mensaje, ¿llama el agente a la herramienta correcta? Con 15 herramientas y un 7B, es la pieza más frágil del sistema, y hasta ahora solo se sabía por impresiones (el «quirk de routing» de P24-P27 y P33).
+**La pregunta:** ante cada mensaje, ¿llama el agente a la herramienta correcta? Con 15 herramientas y un 7B, es la pieza más frágil del sistema, y hasta ahora solo se sabía por impresiones (el «quirk de routing» de P24-P27 y P32).
 
 **El harness** (`app/eval/tool_routing.py`), como el de recuperación de la Fase 1: un dataset de 38 mensajes (`app/eval/datasets/tool_routing.yaml`) con la **primera** herramienta esperada (o `none`), preguntado al modelo con el mismo system prompt y las mismas tools que usa el agente. Mide solo esa decisión: no ejecuta nada, así que no toca Google, la BD ni el correo. Tests deterministas (la aritmética, y que el dataset solo nombra herramientas que existen) y un piso sobre el modelo real activable con `EVAL_REAL=1`.
 
@@ -118,8 +118,13 @@ Ninguna variante mejora de forma fiable: cada una arregla unos casos y rompe otr
 ## 6. Calidad
 
 - **q1 — Tests:** fechas y horas en lenguaje natural (`_resolve_due`, `_resolve_time`) y la heurística sí/no de las confirmaciones (ejecuta, cancela o, ante la duda, vuelve a preguntar sin ejecutar). Y una medición que cambió la suite: preparar cada test tardaba ~2,5 s y ejecutarlo casi nada. El culpable era `TRUNCATE`, que crea archivos nuevos en disco y los sincroniza (lento en Docker Desktop); con tablas casi vacías, `DELETE` es casi instantáneo. **De 8,5 minutos a 35 segundos.**
-- **q2 — CI:** un workflow de GitHub Actions (ruff + pytest con un servicio pgvector y torch de CPU; build del frontend; validación del compose), probado en contenedores limpios. GitHub no ejecuta los trabajos: «account is locked due to a billing issue», en una cuenta Free sin suscripciones. Ticket de soporte abierto. Se fusionó igualmente, tras simularla otra vez en contenedores limpios (ruff sin errores, 246 tests, build del frontend y compose) y con tesseract añadido para que los tests de OCR también corran allí: cuando GitHub levante el bloqueo, arranca sola.
-- **q3 — Documentación:** los tres README al día (el principal decía «Web UI mínima»; el del frontend listaba como pendiente lo que ya existía) y esta bitácora. El archivo `BITACORA-parte-34.md` se llamaba así pero era la «Parte 36»: renombrado a `BITACORA-parte-36.md`, sin tocar su contenido.
+- **q2 — CI:** un workflow de GitHub Actions (ruff + pytest con un servicio pgvector y torch de CPU; build del frontend; validación del compose), probado en contenedores limpios. GitHub no ejecuta los trabajos: «account is locked due to a billing issue», en una cuenta Free sin suscripciones. Se fusionó tras simularla otra vez en contenedores limpios (ruff sin errores, 246 tests, build del frontend y compose), con tesseract añadido para que los tests de OCR también corran allí. Soporte de GitHub levantó el bloqueo y el 8 de octubre la CI corrió por primera vez en `main`: todo en verde, con los mismos 246 tests.
+- **q3 — Documentación:** los tres README al día (el principal decía «Web UI mínima»; el del frontend listaba como pendiente lo que ya existía) y esta bitácora. Además había dos versiones del cierre de la Fase 3: la «Parte 33» y un borrador anterior que repartía P32 en cinco partes y se titulaba «Parte 36» (guardado como `BITACORA-parte-34.md`). Se quedó la 33, la revisión final (del 3 de junio; el borrador es del 2), y el borrador se borró. Por eso esta parte es la 34.
+- **Auditoría final: ¿lo puede levantar alguien ajeno?** Repasando el README contra los archivos reales salieron cuatro cosas:
+  - **Nada se reiniciaba solo:** sin política de reinicio, tras apagar el equipo Nexa quedaba parado y los recordatorios dejaban de llegar sin aviso. Ahora los servicios que se quedan corriendo llevan `restart: unless-stopped`.
+  - **`docker compose up` corría también la suite de tests** en cada arranque: el servicio `tests` va ahora en su propio perfil, y `docker compose run --rm tests` sigue funcionando.
+  - **El README daba por hecho Python** (para el script de secretos) y decía que Node solo hacía falta para *desarrollar* el frontend, cuando hace falta para *usar* la interfaz web. Ahora lo dice, con una alternativa en Docker para quien no tenga Python.
+  - **Faltaba la voz en la documentación:** su descarga de ~1,8 GB en el primer arranque, la licencia CPML (no comercial) del modelo XTTS-v2 y el receptor de webhooks de prueba (`http://webhook-receiver:9000/`).
 
 ---
 
@@ -177,22 +182,20 @@ docker compose run --rm -e EVAL_REAL=1 tests pytest tests/test_tool_routing_eval
 - ✅ **Instalación (4/4):** migraciones, secretos, sin GPU, embeddings.
 - ✅ **Seguridad (2/2):** puertos, `http_get`.
 - ✅ **Funciones (6/6):** recordatorios, Calendar completo, Word/OCR/citas, panel de memoria, evaluación del enrutado, sesión y Markdown.
-- ✅ **Calidad (3/3):** tests, documentación y CI (fusionada; arranca cuando GitHub desbloquee la cuenta).
+- ✅ **Calidad (3/3):** tests, documentación y CI (en verde en GitHub).
 
 ### Deudas / pendientes 🔜
 
-- **CI:** comprobar su primera ejecución en GitHub cuando se levante el bloqueo de facturación de la cuenta.
 - **El enrutado del 7B:** pregunta por el id en vez de listar primero; a veces llama con un id vacío. El eval ya permite comparar con datos el 14B (que no cabe bien en 12 GB con el reranker y la voz) o un modelo más nuevo: era la razón de construirlo.
 - **El eval mide la herramienta, no sus argumentos.** El siguiente paso es añadir al dataset los argumentos esperados (la fecha tal como la dijo el usuario, el destinatario del correo) y comprobarlos.
-- **El piso del eval de recuperación no se puede ejecutar como dice su docstring:** `docker compose exec -e EVAL_REAL=1 api pytest …`, pero la imagen de la API no tiene pytest, y el `conftest` fuerza la BD `_test`, que no tiene el corpus. El CLI `python -m app.eval.retrieval` sí funciona.
+- **El piso del eval de recuperación no tiene dónde ejecutarse con pytest:** la imagen de la API no trae pytest y el `conftest` fuerza la BD `_test`, que no tiene el corpus. Su docstring ya lo dice y apunta al CLI, `python -m app.eval.retrieval`, que sí funciona. Hacerlo ejecutable (un umbral en el CLI, por ejemplo) queda para otra vez.
 - **OCR:** tesseract sin análisis de maquetación, como mucho 30 páginas por PDF; los nombres propios pueden perder tildes («Ibáñez» → «Ibanez»). Excel, PowerPoint, Sheets y Slides siguen sin soporte.
 - **Citas:** el 7B a veces nombra el título del documento en vez del archivo.
 - **Heredadas:** el frontend sin dockerizar; los tokens OAuth en claro en `oauth_accounts`.
-- **Bitácora:** `BITACORA-parte-33.md` y `BITACORA-parte-36.md` son dos versiones del cierre de la Fase 3 (la 33 agrupa P32 en una parte; la 36 la reparte en cinco). Decidir cuál queda.
 
 ---
 
-## 10. Temario de estudio (Parte 37)
+## 10. Temario de estudio (Parte 34)
 
 > Conceptos transferibles que esta parte enseña. Para repaso.
 
@@ -224,4 +227,4 @@ docker compose run --rm -e EVAL_REAL=1 tests pytest tests/test_tool_routing_eval
 
 ---
 
-*Cierre de la Parte 37. La revisión, cerrada: los 23 puntos, verificados contra los servicios reales. NexaAgent hace lo que dice que hace, se instala a la primera, y ahora mide también si elige bien sus herramientas.*
+*Cierre de la Parte 34. La revisión, cerrada: los 23 puntos, verificados contra los servicios reales. NexaAgent hace lo que dice que hace, se instala a la primera, y ahora mide también si elige bien sus herramientas.*
