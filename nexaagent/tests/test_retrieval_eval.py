@@ -9,10 +9,10 @@ en CI):
      cálculo regresiona, este test lo caza en la suite estándar.
 
   2. test_retrieval_recall_floor_real — PISO sobre datos REALES: corre el dataset
-     contra la BD con los chunks + Ollama. Skippeado por defecto (no hay corpus ni
-     Ollama en el servicio `tests`); se activa con EVAL_REAL=1 en un entorno que sí
-     alcanza la BD real y Ollama (p.ej. el contenedor `api`):
-         docker compose exec -e EVAL_REAL=1 api pytest tests/test_retrieval_eval.py
+     contra la BD con los chunks + Ollama. Skippeado por defecto. OJO: hoy no hay
+     dónde activarlo con pytest: el conftest fuerza la BD `<db>_test`, que no tiene el
+     corpus, y la imagen de la API no trae pytest. La medición real se hace con el CLI:
+         docker compose exec api python -m app.eval.retrieval
 """
 import os
 
@@ -52,8 +52,8 @@ async def test_recall_mrr_math(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(
     not os.getenv("EVAL_REAL"),
-    reason="piso de regresión sobre datos reales; requiere BD con chunks + Ollama. "
-    "Activar con EVAL_REAL=1 en un entorno que los alcance (contenedor api).",
+    reason="piso de regresión sobre datos reales; requiere la BD con el corpus + Ollama. "
+    "Para medir: docker compose exec api python -m app.eval.retrieval",
 )
 async def test_retrieval_recall_floor_real():
     """Piso de regresión sobre el corpus REAL single-copy (tras dedup de los

@@ -76,6 +76,7 @@ Nexa/
 | **PostgreSQL + pgvector** | Conversaciones, mensajes, documentos, vectores, tareas, cuentas OAuth |
 | **Redis** | Memoria de corto plazo + broker de Celery |
 | **Ollama** | Inferencia local: `qwen2.5` 7B (chat con tool-calling) + `nomic-embed-text` (embeddings, 768-dim) |
+| **Voz** (`tts`) | Lectura en voz alta con XTTS-v2 (voces Ana y Alma), en GPU si la hay |
 
 ---
 
@@ -83,7 +84,8 @@ Nexa/
 
 - **Docker** y **Docker Compose**.
 - **GPU NVIDIA** con el runtime de Docker para GPU, recomendada (el `docker-compose.yml` reserva GPU para Ollama, el reranker dentro de `api` y la voz). **Sin GPU** también funciona, más lento: arranca con `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up --build`, que quita esas reservas; el reranker detecta que no hay CUDA y usa la CPU.
-- **Node 18+** solo si vas a desarrollar el frontend (probado con Node 22).
+- **Python 3.9+**, solo para el script que crea los secretos. Si no lo tienes, ese script también se puede ejecutar con Docker (ver abajo).
+- **Node 18+** para la interfaz web, que no corre en Docker (probado con Node 22).
 
 ---
 
@@ -102,10 +104,16 @@ cp .env.example .env          # ajusta modelos/zona horaria si quieres
 python scripts/init_secrets.py
 ```
 
+Sin Python en el equipo, el mismo script con Docker (en PowerShell o bash, desde `nexaagent/`):
+
+```bash
+docker run --rm -it -v "${PWD}:/w" -w /w python:3.11-slim python scripts/init_secrets.py
+```
+
 El script genera `jwt_secret` y `postgres_password`, te pide la contraseña para entrar a Nexa (`auth_password`, la que envías a `/auth/login`) y deja **vacíos** los de las integraciones opcionales. Nunca sobrescribe un archivo que ya exista.
 
 - **Google** (Calendar/Gmail/Drive): escribe las credenciales de tu cliente OAuth en `secrets/google_client_id.txt` y `secrets/google_client_secret.txt`.
-- **Webhook** (`call_webhook`): escribe la URL en `secrets/webhook_url.txt`.
+- **Webhook** (`call_webhook`): escribe la URL en `secrets/webhook_url.txt`. Para probarlo sin un sistema externo, compose levanta un receptor de prueba: usa `http://webhook-receiver:9000/` y mira lo que llega con `docker compose logs webhook-receiver`.
 
 > Créalos **antes** del primer `docker compose up`. Si falta un archivo, Docker no da error: crea una *carpeta* con ese nombre en `secrets/`. Si eso pasa, vuelve a ejecutar el script, que cambia las carpetas vacías por archivos. Con un secreto obligatorio en ese estado, la API no arranca y su log explica qué falta.
 
@@ -115,12 +123,18 @@ Levanta el stack:
 docker compose up --build
 ```
 
-> **El primer arranque tarda bastante (unos 10 min o más, según tu conexión)**: Ollama descarga los modelos (`qwen2.5` ~4.7 GB, `nomic-embed-text` ~274 MB). El esquema de la BD lo crea el servicio `migrate` (`alembic upgrade head`) antes de que arranquen la API y el worker.
+> **El primer arranque tarda bastante (unos 10 min o más, según tu conexión)**: Ollama descarga los modelos (`qwen2.5` ~4.7 GB, `nomic-embed-text` ~274 MB) y el servicio de voz, XTTS-v2 (~1.8 GB). El esquema de la BD lo crea el servicio `migrate` (`alembic upgrade head`) antes de que arranquen la API y el worker.
+>
+> El modelo de voz XTTS-v2 tiene la licencia CPML de Coqui, que solo permite uso no comercial; compose la acepta con `COQUI_TOS_AGREED=1`.
+>
+> Los servicios se reinician solos si se reinicia el equipo o Docker (`restart: unless-stopped`), así que los recordatorios siguen llegando. Para pararlos: `docker compose stop`.
 
 - API + Swagger: **http://localhost:8000/docs**
 - Salud: **http://localhost:8000/health**
 
-### 2. Frontend (opcional)
+### 2. Interfaz web
+
+No corre en Docker: se arranca con Node, en otra terminal y desde la raíz del repositorio.
 
 ```bash
 cd frontend
@@ -191,7 +205,7 @@ docker compose exec api python -m app.eval.tool_routing   # qué herramienta eli
 docker compose exec api python -m app.eval.retrieval      # Recall@k y MRR del RAG sobre los documentos cargados
 ```
 
-Con `qwen2.5` 7B el agente elige la herramienta correcta en el 84–90 % de los casos de enrutado; varía un poco de una sesión a otra, aun con temperature 0 (detalle en la [bitácora, Parte 37](Docs/BITACORA-parte-37.md)). Los fallos típicos son preguntarle al usuario un dato que podría buscar (qué tarea, qué reunión) en vez de listarlas primero. Cuando el modelo escribe la llamada a una herramienta como texto en vez de hacerla, el agente la sustituye por un aviso. Para usar el piso del enrutado como test de regresión:
+Con `qwen2.5` 7B el agente elige la herramienta correcta en el 84–90 % de los casos de enrutado; varía un poco de una sesión a otra, aun con temperature 0 (detalle en la [bitácora, Parte 34](Docs/BITACORA-parte-34.md)). Los fallos típicos son preguntarle al usuario un dato que podría buscar (qué tarea, qué reunión) en vez de listarlas primero. Cuando el modelo escribe la llamada a una herramienta como texto en vez de hacerla, el agente la sustituye por un aviso. Para usar el piso del enrutado como test de regresión:
 
 ```bash
 docker compose run --rm -e EVAL_REAL=1 tests pytest tests/test_tool_routing_eval.py
